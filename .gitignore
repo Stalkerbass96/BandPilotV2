@@ -1,0 +1,45 @@
+# ─── Python ───
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.venv/
+venv/
+env/
+*.egg-info/
+.mypy_cache/
+.ruff_cache/
+
+# ─── 环境变量（含敏感密钥，绝不提交）───
+.env
+.env.local
+.env.*.local
+
+# ─── 数据库（含用户数据 + 加密的 BYOK 密钥）───
+*.db
+*.sqlite
+*.sqlite3
+
+# ─── 上传 / 导出数据 ───
+job_root/
+uploads/
+exports/
+
+# ─── Node / 前端 ───
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+
+# tsc 编译 vite.config.ts 产生的构建产物（保留源文件 vite.config.ts）
+vite.config.js
+vite.config.d.ts
+
+# ─── IDE / 系统 ───
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ─── 日志 ───
+*.log

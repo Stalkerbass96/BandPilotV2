@@ -1,0 +1,32 @@
+sequenceDiagram
+    participant API as repair_project (routes/projects.py)
+    participant P as RepairPipeline
+    participant SS as StreamSeparationStage
+    participant DET as detection.separation
+    participant FS as FingeringStage
+    participant AS as ArticulationStage
+    participant AM as AssembleStage
+    participant EX as GP5Exporter
+
+    API->>P: execute(ctx)
+    P->>P: Quantize → MeasureSplit → Tie → Voice（voice 2 语义不变）
+    P->>SS: run(ctx)
+    SS->>SS: VoicedNote → SeparationNote[] 投影
+    SS->>DET: detect_separation(notes)
+    DET-->>SS: SeparationReport(segments + confidence)
+    alt 无混合片段 / 片段全部回退
+        SS-->>P: 全部 stream=lead（单轨）
+    else 存在有效混合片段
+        SS->>SS: assign_stream 打标签（low→rhythm, high→lead）
+    end
+    SS->>P: ctx.voiced_notes(带 stream) + ctx.separation
+    P->>FS: run(ctx)
+    FS->>FS: 按 stream 分组，各自维护 prev_fingered
+    P->>AS: run(ctx)
+    AS->>AS: legato 候选按 stream 隔离
+    P->>AM: build_ir(ctx)
+    AM->>AM: 按 stream 建 Lead/Rhythm 两条 track
+    AM-->>P: GuitarProjectIR(tracks=[lead, rhythm])
+    API->>API: save_ir(ir)
+    API->>EX: export(ir)（多轨）
+    EX-->>API: output.gp5（双轨）

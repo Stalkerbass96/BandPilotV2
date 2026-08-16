@@ -1,0 +1,290 @@
+{
+  "snapshot_version": "2026.08.3",
+  "schema_version": "2",
+  "status": "approved",
+  "changelog": [
+    {
+      "version": "2026.08.4",
+      "date": "2026-08-16",
+      "changes": [
+        "Ample SC profile filled with real data from official manual (Main_Panel_Manual-AGSC.pdf, 15 pages)",
+        "SC key differences from Eclipse documented: PH as separate keyswitch, Slide Guitar replaces Tap, different string force notes, different position assignment, 12 FX sounds (adds Raking), 2 sustain velocity layers",
+        "Added slide_guitar and pinch_harmonic to _ARTICULATION_TYPE_TO_KEY mapping in profile.py"
+      ]
+    },
+    {
+      "version": "2026.08.3",
+      "date": "2026-08-16",
+      "changes": [
+        "KB4 schema upgraded to v2: per-articulation playable ranges, velocity layers, string force, capo force, FX sounds, control switches",
+        "Ample Eclipse profile filled with real data from official manual (Main Panel Manual-AME.pdf, 19 pages)",
+        "Added tap articulation (F#0 = MIDI 30) for Eclipse",
+        "Added velocity layers for sustain (5 zones) and palm mute (3 zones)",
+        "Added string force keyswitches (F#-1 to B-1 = MIDI 18-23)",
+        "Added capo force keyswitches (G#0 activate + C1-F#2 positions)",
+        "Added 11 FX sound keyswitches (F5-G6)",
+        "Added control switches (open string first, auto legato mode, poly repeater)",
+        "Ample SC profile upgraded to v2 schema (velocity layers pending SC manual)"
+      ]
+    }
+  ],
+  "entries": [
+    {
+      "knowledge_id": "kb4-ample-eclipse",
+      "domain": "kb4_instruments",
+      "kind": "instrument_profile",
+      "schema_version": "2",
+      "knowledge_version": "2026.08.3",
+      "status": "approved",
+      "payload": {
+        "profile_id": "ample_eclipse",
+        "product": "Ample Metal Eclipse",
+        "manufacturer": "Ample Sound",
+        "manual_source": "Main Panel Manual-AME.pdf",
+        "octave_convention": "c3_60",
+        "global": {
+          "playable_min": 36,
+          "playable_max": 84,
+          "note_channel": 0,
+          "keyswitch_velocity": 100,
+          "note_off_velocity": 64,
+          "keyswitch_length_ticks": 12,
+          "legato_overlap_ticks": 30,
+          "keyswitch_preroll_ticks": 30
+        },
+        "articulations": {
+          "sustain": {
+            "keyswitch": { "note": 24, "label": "C0" },
+            "playable_range": { "min": 36, "max": 84 },
+            "velocity_layers": [
+              { "min": 1, "max": 21, "name": "full_mute" },
+              { "min": 22, "max": 42, "name": "three_quarter_mute" },
+              { "min": 43, "max": 63, "name": "half_mute" },
+              { "min": 64, "max": 126, "name": "sustain" },
+              { "min": 127, "max": 127, "name": "pop_pinch_harmonic" }
+            ],
+            "persist": true,
+            "can_combine_with": "palm_mute"
+          },
+          "natural_harmonic": {
+            "keyswitch": { "note": 25, "label": "C#0" },
+            "playable_range": { "min": 40, "max": 69 },
+            "velocity_layers": [
+              { "min": 1, "max": 126, "name": "natural_harmonic" },
+              { "min": 127, "max": 127, "name": "pinch_harmonic" }
+            ],
+            "persist": true
+          },
+          "palm_mute": {
+            "keyswitch": { "note": 26, "label": "D0" },
+            "playable_range": { "min": 36, "max": 84 },
+            "velocity_layers": [
+              { "min": 1, "max": 42, "name": "full_mute" },
+              { "min": 43, "max": 63, "name": "three_quarter_mute" },
+              { "min": 64, "max": 127, "name": "half_mute" }
+            ],
+            "persist": true,
+            "can_combine_with": "sustain"
+          },
+          "slide_in_out": {
+            "keyswitch": { "note": 27, "label": "D#0" },
+            "playable_range": { "min": 38, "max": 84 },
+            "behaviors": { "before_note": "slide_in", "during_note": "slide_out" },
+            "revert_to": "sustain"
+          },
+          "legato_slide": {
+            "keyswitch": { "note": 28, "label": "E0" },
+            "playable_range": { "min": 37, "max": 84 },
+            "poly_legato": true,
+            "requirements": ["time_overlap", "same_string", "keyswitch_preroll"],
+            "velocity_behavior": { "high": "change_fret_position", "low": "no_fret_change" }
+          },
+          "hammer_pull": {
+            "keyswitch": { "note": 29, "label": "F0" },
+            "playable_range": { "min": 37, "max": 84 },
+            "poly_legato": true,
+            "requirements": ["time_overlap", "same_string", "keyswitch_preroll"],
+            "velocity_behavior": { "high": "change_fret_position", "low": "no_fret_change" }
+          },
+          "tap": {
+            "keyswitch": { "note": 30, "label": "F#0" },
+            "playable_range": { "min": 37, "max": 84 }
+          }
+        },
+        "string_force": {
+          "notes": [
+            { "note": 18, "label": "F#-1", "string": 6 },
+            { "note": 19, "label": "G-1", "string": 5 },
+            { "note": 20, "label": "G#-1", "string": 4 },
+            { "note": 21, "label": "A-1", "string": 3 },
+            { "note": 22, "label": "A#-1", "string": 2 },
+            { "note": 23, "label": "B-1", "string": 1 }
+          ],
+          "high_velocity_affects_fret": true
+        },
+        "capo_force": {
+          "activate_note": 32,
+          "activate_label": "G#0",
+          "position_notes": [36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54],
+          "fret_range": { "min": 0, "max": 18 }
+        },
+        "fx_sounds": {
+          "scratch": { "note": 89, "label": "F5" },
+          "slap": { "note": 90, "label": "F#5" },
+          "press": { "note": 91, "label": "G5" },
+          "stroke_muting": { "note": 92, "label": "G#5" },
+          "downstroke_1": { "note": 93, "label": "A5" },
+          "upstroke_1": { "note": 94, "label": "A#5" },
+          "downstroke_2": { "note": 95, "label": "B5" },
+          "upstroke_2": { "note": 96, "label": "C6" },
+          "pick_scrape": { "note": 101, "label": "F6" },
+          "fx_slide_1": { "note": 102, "label": "F#6" },
+          "fx_slide_2": { "note": 103, "label": "G6" }
+        },
+        "control_switches": {
+          "open_string_first": { "note": 104, "label": "G#6", "high_velocity": "on", "low_velocity": "off" },
+          "auto_legato_mode": { "note": 99, "label": "D#6", "high_velocity": "auto_slide", "low_velocity": "auto_hp" },
+          "poly_repeater": { "notes": [98, 100], "labels": ["D6", "E6"] }
+        },
+        "supported_articulations": ["sustain", "palm_mute", "hammer_on", "pull_off", "slide", "slide_in", "slide_out", "natural_harmonic", "tap", "let_ring"]
+      },
+      "scope": { "instrument": ["ample_eclipse"] },
+      "provenance": {
+        "source_type": "official_manual",
+        "source_ids": ["Main Panel Manual-AME.pdf"],
+        "extracted_by": "Bob (WorkBuddy)",
+        "extracted_date": "2026-08-16",
+        "notes": "Full 19-page manual extracted via PyMuPDF. All keyswitch notes, velocity layers, string force, capo force, FX sounds, and control switches transcribed. Octave convention: C3=60 (Ample displays C0 for MIDI 24)."
+      }
+    },
+    {
+      "knowledge_id": "kb4-ample-sc",
+      "domain": "kb4_instruments",
+      "kind": "instrument_profile",
+      "schema_version": "2",
+      "knowledge_version": "2026.08.4",
+      "status": "approved",
+      "payload": {
+        "profile_id": "ample_sc",
+        "product": "Ample Guitar SC",
+        "manufacturer": "Ample Sound",
+        "manual_source": "Main_Panel_Manual-AGSC.pdf",
+        "octave_convention": "c3_60",
+        "global": {
+          "playable_min": 40,
+          "playable_max": 86,
+          "note_channel": 0,
+          "keyswitch_velocity": 100,
+          "note_off_velocity": 64,
+          "keyswitch_length_ticks": 12,
+          "legato_overlap_ticks": 30,
+          "keyswitch_preroll_ticks": 30
+        },
+        "articulations": {
+          "pinch_harmonic": {
+            "keyswitch": { "note": 23, "label": "B-1" },
+            "playable_range": { "min": 40, "max": 86 },
+            "persist": true,
+            "note": "SC has PH as a separate keyswitch (B-1), unlike Eclipse where PH is velocity 127 of Sustain."
+          },
+          "sustain": {
+            "keyswitch": { "note": 24, "label": "C0" },
+            "playable_range": { "min": 40, "max": 86 },
+            "velocity_layers": [
+              { "min": 1, "max": 126, "name": "sustain" },
+              { "min": 127, "max": 127, "name": "pop_or_pinch_harmonic" }
+            ],
+            "persist": true,
+            "can_combine_with": "palm_mute"
+          },
+          "natural_harmonic": {
+            "keyswitch": { "note": 25, "label": "C#0" },
+            "playable_range": { "min": 40, "max": 83 },
+            "persist": true
+          },
+          "palm_mute": {
+            "keyswitch": { "note": 26, "label": "D0" },
+            "playable_range": { "min": 40, "max": 86 },
+            "persist": true,
+            "can_combine_with": "sustain",
+            "velocity_behavior": "Lower velocity = greater mute depth"
+          },
+          "slide_in_out": {
+            "keyswitch": { "note": 27, "label": "D#0" },
+            "playable_range": { "min": 42, "max": 86 },
+            "behaviors": { "before_note": "slide_in", "during_note": "slide_out" },
+            "revert_to": "sustain"
+          },
+          "legato_slide": {
+            "keyswitch": { "note": 28, "label": "E0" },
+            "playable_range": { "min": 41, "max": 86 },
+            "poly_legato": true,
+            "requirements": ["time_overlap", "same_string", "keyswitch_preroll"],
+            "velocity_behavior": { "high": "change_fret_position", "low": "no_fret_change" }
+          },
+          "hammer_pull": {
+            "keyswitch": { "note": 29, "label": "F0" },
+            "playable_range": { "min": 40, "max": 86 },
+            "poly_legato": true,
+            "requirements": ["time_overlap", "same_string", "keyswitch_preroll"],
+            "velocity_behavior": { "high": "change_fret_position", "low": "no_fret_change" }
+          },
+          "slide_guitar": {
+            "keyswitch": { "note": 30, "label": "F#0" },
+            "playable_range": { "min": 42, "max": 86 },
+            "velocity_behavior": { "high": "slide_ornament", "low": "sustained_slide_note" },
+            "note": "SC-specific articulation not present in Eclipse."
+          }
+        },
+        "string_force": {
+          "notes": [
+            { "note": 31, "label": "G0", "string": 6 },
+            { "note": 32, "label": "G#0", "string": 5 },
+            { "note": 33, "label": "A0", "string": 4 },
+            { "note": 34, "label": "A#0", "string": 3 },
+            { "note": 35, "label": "B0", "string": 2 },
+            { "note": 36, "label": "C1", "string": 1 }
+          ],
+          "high_velocity_affects_fret": true,
+          "note": "SC uses G0-C1 (31-36), different from Eclipse's F#-1~B-1 (18-23)."
+        },
+        "capo_force": {
+          "activate_note": 37,
+          "activate_label": "C#1",
+          "position_notes": [40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58],
+          "fret_range": { "min": 0, "max": 18 },
+          "note": "SC calls this Position Assignment. C#1 activates, E1-A#2 selects position 0-18."
+        },
+        "fx_sounds": {
+          "scratch": { "note": 89, "label": "F5" },
+          "slap": { "note": 90, "label": "F#5" },
+          "muting": { "note": 91, "label": "G5" },
+          "strum_mute": { "note": 92, "label": "G#5" },
+          "downstroke_1": { "note": 93, "label": "A5" },
+          "upstroke_1": { "note": 94, "label": "A#5" },
+          "downstroke_2": { "note": 95, "label": "B5" },
+          "upstroke_2": { "note": 96, "label": "C6" },
+          "raking": { "note": 100, "label": "E6" },
+          "pick_scrape": { "note": 101, "label": "F6" },
+          "fx_slide_turn": { "note": 102, "label": "F#6" },
+          "fx_slide_down": { "note": 103, "label": "G6" }
+        },
+        "control_switches": {
+          "note_repeater": { "note": 98, "label": "D6" },
+          "auto_legato_mode": { "note": 99, "label": "D#6", "high_velocity": "auto_slide", "low_velocity": "auto_hp" },
+          "open_string_first": { "note": 104, "label": "G#6", "high_velocity": "on", "low_velocity": "off" },
+          "position_mode": { "note": 107, "label": "B6", "high_velocity": "chord_mode", "low_velocity": "melody_mode" }
+        },
+        "supported_articulations": ["sustain", "palm_mute", "hammer_on", "pull_off", "slide", "slide_in", "slide_out", "natural_harmonic", "pinch_harmonic", "slide_guitar", "let_ring"]
+      },
+      "scope": { "instrument": ["ample_sc"] },
+      "provenance": {
+        "source_type": "official_manual",
+        "source_ids": ["Main_Panel_Manual-AGSC.pdf"],
+        "extracted_by": "Bob (WorkBuddy)",
+        "extracted_date": "2026-08-16",
+        "notes": "Full 15-page manual extracted via PyMuPDF from https://www.amplesound.net/en/Main_Panel_Manual-AGSC.pdf. Key differences from Eclipse: (1) PH is separate keyswitch B-1 not velocity 127; (2) Slide Guitar replaces Tap at F#0; (3) String force uses G0-C1 not F#-1~B-1; (4) Position Assignment uses C#1 activation not G#0; (5) 12 FX sounds (adds Raking); (6) Sustain has 2 velocity layers not 5; (7) Playable range is E1-D5 (40-86) not C1-C5 (36-84)."
+      }
+    }
+  ]
+}

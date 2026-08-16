@@ -1,0 +1,86 @@
+classDiagram
+    class SeparationNote {
+        +int source_index
+        +int pitch
+        +float start_beat
+        +float duration_beats
+        +int measure_number
+        +float beat_in_measure
+    }
+    class SeparationSegment {
+        +int start_measure
+        +int end_measure
+        +int split_pitch
+        +int low_note_count
+        +int high_note_count
+        +float confidence
+        +dict features
+        +str reason
+    }
+    class SeparationReport {
+        +bool detected
+        +list segments
+        +float total_confidence
+        +list warnings
+        +segment_covering(measure) SeparationSegment
+        +is_separated(measure) bool
+        +split_pitch_for(measure) int
+    }
+    class PipelineContext {
+        +NormalizedTimeline timeline
+        +NormalizedTrack track
+        +list voiced_notes
+        +list fingered_notes
+        +SeparationReport separation
+    }
+    class VoicedNote {
+        +int source_index
+        +int pitch
+        +int voice
+        +str stream
+    }
+    class FingeredNote {
+        +int source_index
+        +int pitch
+        +int voice
+        +str stream
+        +int string
+        +int fret
+    }
+    class StreamSeparationStage {
+        +str name
+        +run(ctx) PipelineContext
+    }
+    class FingeringStage {
+        +run(ctx) PipelineContext
+    }
+    class ArticulationStage {
+        +run(ctx) PipelineContext
+    }
+    class AssembleStage {
+        +build_ir(ctx) GuitarProjectIR
+    }
+    class GuitarProjectIR {
+        +list tracks
+    }
+    class GuitarTrackIR {
+        +str id
+        +str name
+        +str role
+        +list tuning
+        +list measures
+    }
+    class GP5Exporter {
+        +export(ir, path) ExportResult
+    }
+
+    StreamSeparationStage --> PipelineContext
+    StreamSeparationStage --> SeparationReport
+    SeparationReport --> SeparationSegment
+    StreamSeparationStage ..> VoicedNote : 投影并打 stream 标签
+    FingeringStage ..> VoicedNote : 按 stream 分组
+    FingeringStage ..> FingeredNote
+    ArticulationStage ..> FingeredNote : 按 stream 隔离 legato
+    AssembleStage --> GuitarProjectIR
+    GuitarProjectIR --> GuitarTrackIR
+    GP5Exporter --> GuitarProjectIR

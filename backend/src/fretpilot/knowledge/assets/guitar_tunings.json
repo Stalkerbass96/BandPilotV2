@@ -1,0 +1,127 @@
+{
+  "schema_version": "2",
+  "snapshot_version": "2026-08-16",
+  "status": "approved",
+  "tunings": [
+    {
+      "id": "standard_6",
+      "name": "Standard E",
+      "display_name": "Standard E (6-string)",
+      "string_count": 6,
+      "string_pitches": [40, 45, 50, 55, 59, 64],
+      "min_pitch": 40,
+      "max_pitch": 88,
+      "description": "E2 A2 D3 G3 B3 E4 — 标准定弦"
+    },
+    {
+      "id": "drop_d_6",
+      "name": "Drop D",
+      "display_name": "Drop D (6-string)",
+      "string_count": 6,
+      "string_pitches": [38, 45, 50, 55, 59, 64],
+      "min_pitch": 38,
+      "max_pitch": 88,
+      "description": "D2 A2 D3 G3 B3 E4 — 第6弦降一个全音"
+    },
+    {
+      "id": "half_step_down_6",
+      "name": "Half Step Down",
+      "display_name": "E♭ Standard (6-string)",
+      "string_count": 6,
+      "string_pitches": [39, 44, 49, 54, 58, 63],
+      "min_pitch": 39,
+      "max_pitch": 87,
+      "description": "E♭2 A♭2 D♭3 G♭3 B♭3 E♭4 — 全部弦降半音"
+    },
+    {
+      "id": "full_step_down_6",
+      "name": "Full Step Down",
+      "display_name": "D Standard (6-string)",
+      "string_count": 6,
+      "string_pitches": [38, 43, 48, 53, 57, 62],
+      "min_pitch": 38,
+      "max_pitch": 86,
+      "description": "D2 G2 C3 F3 A3 D4 — 全部弦降全音"
+    },
+    {
+      "id": "drop_c_6",
+      "name": "Drop C",
+      "display_name": "Drop C (6-string)",
+      "string_count": 6,
+      "string_pitches": [36, 43, 48, 53, 57, 62],
+      "min_pitch": 36,
+      "max_pitch": 86,
+      "description": "C2 G2 C3 F3 A3 D4 — Drop D 基础上再降全音"
+    },
+    {
+      "id": "drop_b_6",
+      "name": "Drop B",
+      "display_name": "Drop B (6-string)",
+      "string_count": 6,
+      "string_pitches": [35, 42, 47, 52, 56, 61],
+      "min_pitch": 35,
+      "max_pitch": 85,
+      "description": "B1 F#2 B2 E3 F#3 B3 — Drop C 基础上再降半音"
+    },
+    {
+      "id": "dadgad_6",
+      "name": "DADGAD",
+      "display_name": "DADGAD (6-string)",
+      "string_count": 6,
+      "string_pitches": [38, 45, 50, 55, 57, 62],
+      "min_pitch": 38,
+      "max_pitch": 86,
+      "description": "D2 A2 D3 G3 A3 D4 — 开放调弦"
+    },
+    {
+      "id": "open_g_6",
+      "name": "Open G",
+      "display_name": "Open G (6-string)",
+      "string_count": 6,
+      "string_pitches": [38, 43, 50, 55, 59, 62],
+      "min_pitch": 38,
+      "max_pitch": 86,
+      "description": "D2 G2 D3 G3 B3 D4 — Keith Richards 常用"
+    },
+    {
+      "id": "open_d_6",
+      "name": "Open D",
+      "display_name": "Open D (6-string)",
+      "string_count": 6,
+      "string_pitches": [38, 45, 50, 54, 57, 62],
+      "min_pitch": 38,
+      "max_pitch": 86,
+      "description": "D2 A2 D3 F#3 A3 D4 — 开放 D 调弦"
+    },
+    {
+      "id": "standard_7",
+      "name": "Standard 7-string",
+      "display_name": "Standard B (7-string)",
+      "string_count": 7,
+      "string_pitches": [35, 40, 45, 50, 55, 59, 64],
+      "min_pitch": 35,
+      "max_pitch": 88,
+      "description": "B1 E2 A2 D3 G3 B3 E4 — 7弦标准定弦"
+    },
+    {
+      "id": "drop_a_7",
+      "name": "Drop A 7-string",
+      "display_name": "Drop A (7-string)",
+      "string_count": 7,
+      "string_pitches": [33, 40, 45, 50, 55, 59, 64],
+      "min_pitch": 33,
+      "max_pitch": 88,
+      "description": "A1 E2 A2 D3 G3 B3 E4 — 7弦 Drop A，金属常用"
+    },
+    {
+      "id": "standard_8",
+      "name": "Standard 8-string",
+      "display_name": "Standard F# (8-string)",
+      "string_count": 8,
+      "string_pitches": [30, 35, 40, 45, 50, 55, 59, 64],
+      "min_pitch": 30,
+      "max_pitch": 88,
+      "description": "F#1 B1 E2 A2 D3 G3 B3 E4 — 8弦标准定弦"
+    }
+  ]
+}

@@ -1,0 +1,149 @@
+%% FretPilot v2 — 时序图（程序调用流程）
+%% 文件: docs/sequence-diagram.mermaid
+%% 包含4个关键流程：修复→alphaTab渲染、ExportPage预览、路由过渡、App初始化
+
+%% ═══════════════════════════════════════════════════════
+%% 流程1：修复 → 自动 GP5 导出 → alphaTab 渲染（核心流程）
+%% ═══════════════════════════════════════════════════════
+
+sequenceDiagram
+    actor User
+    participant WP as WorkbenchPage
+    participant PP as PipelineProgress
+    participant PA as projectsApi
+    participant EA as exportsApi
+    participant TV as TabViewer
+    participant AT as useAlphaTab
+    participant aT as alphaTab API
+
+    User->>WP: 点击 "Run Repair Pipeline"
+    WP->>WP: setIsRunning(true), setCurrentStageIndex(0)
+
+    loop 定时器驱动假进度（每 ~400ms）
+        WP->>WP: setCurrentStageIndex(idx + 1)
+        WP->>PP: render(active=true, currentStageIndex=idx)
+        Note over PP: idx 之前 = done, idx = active, 之后 = pending
+    end
+
+    WP->>PA: repair(id, fidelity, tuningId)
+    Note over PA: POST /api/projects/:id/repair (同步阻塞)
+    PA-->>WP: RepairResponse {note_count, change_count, cleanup, rewrite}
+
+    WP->>WP: setIsRunning(false), setRepairResult(...)
+    WP->>PP: render(completed=true, currentStageIndex=6)
+
+    Note over WP: 修复成功 → 自动触发 GP5 生成
+    WP->>WP: handleAutoExport()
+
+    WP->>EA: exportAndDownload(id, "gp5")
+    EA->>EA: export(id, "gp5")
+    Note over EA: POST /api/projects/:id/export {format:"gp5"}
+    EA->>EA: list(id)
+    Note over EA: GET /api/projects/:id/exports
+    EA->>EA: download(id, latestExportId)
+    Note over EA: GET /api/projects/:id/exports/:eid/download (blob)
+    EA-->>WP: {blob, filename}
+
+    WP->>WP: arrayBuffer = await blob.arrayBuffer()
+    WP->>WP: setGp5Data(arrayBuffer)
+    WP->>TV: scoreData prop 变化
+
+    TV->>AT: useAlphaTab(containerRef)
+    AT->>AT: 动态 import('@coderline/alphatab')
+    AT->>aT: new AlphaTabApi(element, settings)
+    AT->>aT: api.load(arrayBuffer)
+    Note over aT: 解析 GP5 → 生成 SVG 乐谱
+    aT-->>AT: 渲染完成
+    AT-->>TV: isLoading=false
+
+    Note over WP: 用户离开 WorkbenchPage
+    WP->>TV: 组件卸载
+    TV->>AT: useEffect cleanup
+    AT->>aT: api.destroy()
+    Note over aT: 释放内存，防泄漏
+
+%% ═══════════════════════════════════════════════════════
+%% 流程2：ExportPage 导出 + alphaTab 预览
+%% ═══════════════════════════════════════════════════════
+
+sequenceDiagram
+    actor User
+    participant EP as ExportPage
+    participant EA as exportsApi
+    participant TV as TabViewer
+    participant AT as useAlphaTab
+
+    EP->>EP: useEffect → loadData(id)
+    par 并行加载
+        EP->>EA: projectsApi.get(id)
+        EP->>EA: exportsApi.list(id)
+    end
+    EA-->>EP: {project, exports[]}
+
+    User->>EP: 点击历史记录 "Preview"
+    EP->>EA: download(id, exportId)
+    Note over EA: GET /api/projects/:id/exports/:eid/download (blob)
+    EA-->>EP: {blob, filename}
+    EP->>EP: arrayBuffer = await blob.arrayBuffer()
+    EP->>EP: setGp5Data(arrayBuffer)
+    EP->>TV: scoreData 更新
+    TV->>AT: loadScore(arrayBuffer)
+    AT-->>TV: 渲染乐谱 SVG
+
+    User->>EP: 点击 "Export GP5"
+    EP->>EA: export(id, "gp5")
+    EA-->>EP: ExportResponse
+    EP->>EA: list(id) 刷新列表
+    EA-->>EP: {items: ExportRecord[]}
+
+%% ═══════════════════════════════════════════════════════
+%% 流程3：页面路由过渡动画
+%% ═══════════════════════════════════════════════════════
+
+sequenceDiagram
+    actor User
+    participant BR as BrowserRouter
+    participant AR as AnimatedRoutes
+    participant AP as AnimatePresence
+    participant OldPage as 当前页面 motion.div
+    participant NewPage as 目标页面 motion.div
+
+    User->>BR: 点击导航链接
+    BR->>AR: location.pathname 变化
+    AR->>AP: mode="wait" 检测到 key 变化
+
+    AP->>OldPage: trigger "exit" variant
+    Note over OldPage: opacity: 1→0, y: 0→-8, duration: 0.2s
+    OldPage-->>AP: exit 动画完成
+
+    AP->>NewPage: mount + trigger "enter" variant
+    Note over NewPage: opacity: 0→1, y: 8→0, duration: 0.2s
+    NewPage-->>AP: enter 动画完成
+    AP-->>AR: 过渡完成，新页面就绪
+
+%% ═══════════════════════════════════════════════════════
+%% 流程4：App 初始化
+%% ═══════════════════════════════════════════════════════
+
+sequenceDiagram
+    participant DOM as index.html
+    participant Main as main.tsx
+    participant Theme as ThemeProvider
+    participant CSS as CssBaseline
+    participant Router as BrowserRouter
+    participant App as App.tsx
+    participant AR as AnimatedRoutes
+    participant Auth as useAuthStore
+
+    DOM->>Main: 加载 /src/main.tsx
+    Main->>Theme: createTheme(引用 tokens.ts)
+    Main->>Main: ThemeProvider + CssBaseline + BrowserRouter
+    Main->>App: 渲染 App
+    App->>AR: 渲染 AnimatedRoutes
+    AR->>Auth: 读取 token (localStorage persist)
+
+    alt token 存在
+        AR->>AR: ProtectedRoute → Layout → 目标页面
+    else token 不存在
+        AR->>AR: Navigate to="/login"
+    end

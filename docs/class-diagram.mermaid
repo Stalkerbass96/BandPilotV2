@@ -1,0 +1,186 @@
+%% FretPilot v2 — 类图（数据结构与接口）
+%% 文件: docs/class-diagram.mermaid
+
+classDiagram
+  %% ─── 设计令牌系统 ───
+  class DesignTokens {
+    +light: TokenPalette
+    +dark: TokenPalette
+  }
+
+  class TokenPalette {
+    +background: BackgroundTokens
+    +text: TextTokens
+    +brand: BrandTokens
+    +semantic: SemanticTokens
+    +border: BorderTokens
+  }
+
+  class BackgroundTokens {
+    +canvas: string = "#FFFFFF"
+    +surface: string = "#F9FAFB"
+    +elevated: string = "#FFFFFF"
+    +subtle: string = "#F3F4F6"
+  }
+
+  class TextTokens {
+    +primary: string = "#111827"
+    +secondary: string = "#6B7280"
+    +tertiary: string = "#9CA3AF"
+  }
+
+  class BrandTokens {
+    +primary: string = "#6366F1"
+    +hover: string = "#4F46E5"
+    +accent: string = "#8B5CF6"
+  }
+
+  class SemanticTokens {
+    +success: string = "#10B981"
+    +warning: string = "#F59E0B"
+    +error: string = "#EF4444"
+    +info: string = "#3B82F6"
+  }
+
+  class BorderTokens {
+    +default: string = "#E5E7EB"
+    +hover: string = "#D1D5DB"
+    +active: string = "#6366F1"
+  }
+
+  DesignTokens --> TokenPalette
+  TokenPalette --> BackgroundTokens
+  TokenPalette --> TextTokens
+  TokenPalette --> BrandTokens
+  TokenPalette --> SemanticTokens
+  TokenPalette --> BorderTokens
+
+  %% ─── alphaTab 集成 ───
+  class AlphaTabSettings {
+    +core: CoreSettings
+    +player: PlayerSettings
+  }
+
+  class CoreSettings {
+    +fontDirectory: string = "/font/"
+    +engine: string = "svg"
+    +useWorkers: boolean = false
+  }
+
+  class PlayerSettings {
+    +enable: boolean = false
+    +soundFont: string = "/soundfont/sonivox.sf2"
+  }
+
+  class useAlphaTab {
+    -containerRef: Ref~HTMLDivElement~
+    -apiRef: AlphaTabApi|null
+    +api: AlphaTabApi|null
+    +isLoading: boolean
+    +error: string|null
+    +loadScore(data: ArrayBuffer) Promise~void~
+    +destroy() void
+  }
+
+  class TabViewer {
+    -containerRef: Ref~HTMLDivElement~
+    -hook: useAlphaTab
+    +scoreData: ArrayBuffer|null
+    +className: string
+    +onError: (error: string) => void
+    +onLoaded: () => void
+  }
+
+  useAlphaTab --> AlphaTabSettings : 配置
+  TabViewer --> useAlphaTab : 组合使用
+
+  %% ─── PipelineProgress（修复后）───
+  class PipelineProgress {
+    +active: boolean
+    +completed: boolean
+    +currentStageIndex: number
+    -renderStage(stage, idx) JSX.Element
+  }
+
+  class PipelineStage {
+    +name: string
+    +label: string
+    +status: "done"|"active"|"pending"
+  }
+
+  PipelineProgress --> PipelineStage : 渲染7个阶段
+
+  %% ─── API 扩展 ───
+  class ExportsApi {
+    +export(id, format) Promise~ExportResponse~
+    +list(id) Promise~items: ExportRecord[]~
+    +download(id, exportId, fallback) Promise~blob, filename~
+    +exportAndDownload(id, format) Promise~blob, filename~
+  }
+
+  class ExportResponse {
+    +download_url: string
+    +format_id: string
+    +note_count: number
+  }
+
+  class ExportRecord {
+    +id: number
+    +format_id: string
+    +note_count: number
+    +created_at: string|null
+  }
+
+  ExportsApi ..> ExportResponse : 返回
+  ExportsApi ..> ExportRecord : 返回
+
+  %% ─── 页面组件关系 ───
+  class WorkbenchPage {
+    -project: ProjectDetail
+    -fidelity: number
+    -tuningId: string
+    -isRunning: boolean
+    -currentStageIndex: number
+    -gp5Data: ArrayBuffer|null
+    -repairResult: RepairResultState
+    +handleRepair() Promise~void~
+    +handleAutoExport() Promise~void~
+  }
+
+  class ExportPage {
+    -project: ProjectDetail
+    -exports: ExportRecord[]
+    -gp5Data: ArrayBuffer|null
+    +handleExport(format) Promise~void~
+    +handlePreview(exp) Promise~void~
+  }
+
+  class ImportPage {
+    -projects: ProjectItem[]
+    -uploading: boolean
+    +handleFileSelected(file) Promise~void~
+  }
+
+  class LoginPage {
+    -email: string
+    -password: string
+    -loading: boolean
+    -error: string|null
+    +handleSubmit(e) Promise~void~
+  }
+
+  class ByokPage {
+    -config: ByokResponse|null
+    -apiKey: string
+    -provider: string
+    -testing: boolean
+    +handleSave() Promise~void~
+    +handleTest() Promise~void~
+  }
+
+  WorkbenchPage --> TabViewer : 渲染乐谱
+  WorkbenchPage --> PipelineProgress : 显示进度
+  ExportPage --> TabViewer : 预览乐谱
+  ImportPage --> UploadZone : 上传文件
+  WorkbenchPage ..> ExportsApi : 自动导出GP5
+  ExportPage ..> ExportsApi : 导出+预览
