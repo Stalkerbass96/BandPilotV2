@@ -10,11 +10,14 @@ import type {
   ByokTestResponse,
   ExportRecord,
   ExportResponse,
+  LearnResponse,
   ProjectDetail,
   ProjectItem,
   RepairReport,
   RepairResponse,
   TuningInfo,
+  VersionDiff,
+  VersionsResponse,
 } from "./types";
 
 const BASE_URL = "/api";
@@ -214,6 +217,42 @@ export const exportsApi = {
     const fallbackFilename =
       format === "gp5" ? "output.gp5" : "output_ample.mid";
     return this.download(id, latest.id, fallbackFilename);
+  },
+};
+
+// ─── E-Learning API ───
+
+export const elearningApi = {
+  async learn(
+    files: File[],
+    style?: string,
+    promote = true,
+  ): Promise<LearnResponse> {
+    const form = new FormData();
+    for (const f of files) form.append("files", f);
+    if (style) form.append("style", style);
+    form.append("promote", String(promote));
+    // Learning can take a while for large archives.
+    const res = await http.post("/elearning/learn", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 600_000,
+    });
+    return unwrap(res.data) as LearnResponse;
+  },
+
+  async versions(): Promise<VersionsResponse> {
+    const res = await http.get("/elearning/versions");
+    return unwrap(res.data) as VersionsResponse;
+  },
+
+  async rollback(version: string): Promise<{ active_version: string }> {
+    const res = await http.post("/elearning/rollback", { version });
+    return unwrap(res.data) as { active_version: string };
+  },
+
+  async diff(a: string, b: string): Promise<VersionDiff> {
+    const res = await http.get("/elearning/diff", { params: { a, b } });
+    return unwrap(res.data) as VersionDiff;
   },
 };
 

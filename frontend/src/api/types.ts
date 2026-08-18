@@ -153,6 +153,70 @@ export interface ExportRecord {
   created_at: string | null;
 }
 
+// ─── E-Learning ───
+
+export interface StyleStatsInfo {
+  style: string;
+  sample_count: number;
+  total_notes: number;
+  open_string_rate: number;
+  avg_string_skip: number;
+  note_overlap_rate: number;
+  staccato_rate: number;
+  top_chord_shapes: Record<string, number>;
+}
+
+/** A scalar prior weight, or a nested mapping (e.g. chord_shapes). */
+export type PriorValue = number | Record<string, number>;
+
+export interface DerivedPriorsInfo {
+  style: string;
+  knowledge_id: string;
+  payload: Record<string, PriorValue>;
+  confidence: number;
+  source_count: number;
+  derivation_method: string;
+}
+
+export interface LearnResponse {
+  parsed_files: number;
+  total_files: number;
+  failed_files: { file: string; error: string }[];
+  style_stats: StyleStatsInfo[];
+  derived_priors: DerivedPriorsInfo[];
+  new_version: string;
+  promoted: boolean;
+  total_notes: number;
+}
+
+export interface KbVersion {
+  version: string;
+  timestamp: string;
+  source_type: string;
+  styles_updated: string[];
+  knowledge_ids_updated: string[];
+  total_sources: number;
+  avg_confidence: number;
+}
+
+export interface VersionsResponse {
+  items: KbVersion[];
+  active_version: string;
+}
+
+export interface VersionDiff {
+  version_a: string;
+  version_b: string;
+  entry_diffs: Record<
+    string,
+    {
+      payload_diff: Record<string, { a: PriorValue | null; b: PriorValue | null; delta: number | null }>;
+      source_type_a: string;
+      source_type_b: string;
+    }
+  >;
+}
+
 // ─── API envelope ───
 
 export interface ApiEnvelope<T> {

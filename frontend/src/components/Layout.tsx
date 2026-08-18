@@ -48,6 +48,7 @@ export default function Layout({ children }: LayoutProps): JSX.Element {
   const navItems: NavItem[] = isAuthenticated
     ? [
         { label: "Import", path: "/" },
+        { label: "Learning", path: "/learning" },
         { label: "BYOK", path: "/byok" },
       ]
     : [

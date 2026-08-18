@@ -13,6 +13,7 @@ import LoginPage from "../pages/LoginPage";
 import RegisterPage from "../pages/RegisterPage";
 import ByokPage from "../pages/ByokPage";
 import ImportPage from "../pages/ImportPage";
+import LearningPage from "../pages/LearningPage";
 import WorkbenchPage from "../pages/WorkbenchPage";
 import ExportPage from "../pages/ExportPage";
 import Layout from "../components/Layout";
@@ -76,6 +77,16 @@ export function AnimatedRoutes(): JSX.Element {
             <ProtectedRoute>
               <PageWrapper>
                 <ByokPage />
+              </PageWrapper>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/learning"
+          element={
+            <ProtectedRoute>
+              <PageWrapper>
+                <LearningPage />
               </PageWrapper>
             </ProtectedRoute>
           }
