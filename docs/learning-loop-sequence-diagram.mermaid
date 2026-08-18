@@ -1,0 +1,188 @@
+%% FretPilot v2 — 学习闭环时序图（程序调用流程）
+%% 文件: docs/learning-loop-sequence-diagram.mermaid
+%% 包含3个关键流程：单文件Round-Trip评估、批量评估、知识提取与KB更新
+
+%% ═══════════════════════════════════════════════════════
+%% 流程1：单文件 Round-Trip 评估（P0 核心流程）
+%% ═══════════════════════════════════════════════════════
+
+sequenceDiagram
+    actor User
+    participant CLI as CLI<br/>(evaluate.py)
+    participant BE as BatchEvaluator
+    participant GR as GPReader
+    participant MC as GPMidiConverter
+    participant PR as PipelineRunner
+    participant LM as load_midi<br/>(midi/parser.py)
+    participant CT as classify_timeline<br/>(detection/)
+    participant PL as RepairPipeline<br/>(engine/pipeline.py)
+    participant NA as NoteAligner
+    participant DC as DeviationCalculator
+
+    User->>CLI: python -m fretpilot.elearning<br/>evaluate --input song.gp5
+    CLI->>BE: evaluate_file("song.gp5")
+
+    Note over BE: ── Step 1: 解析 GP 文件为 Ground Truth ──
+    BE->>GR: parse("song.gp5", style_label="rock")
+    GR->>GR: guitarpro.parse("song.gp5") → Song
+    GR->>GR: _select_guitar_track(song) → Track
+    GR->>GR: _extract_tuning(track) → [40,45,50,55,59,64]
+    GR->>GR: 遍历 measure → beat → note
+    GR->>GR: 跳过 tie 音符 (type==NoteType.tie)
+    GR->>GR: _ticks_to_beats: tick/960 → beat
+    GR->>GR: _compute_hand_position: max(1, fret)
+    GR-->>BE: GroundTruthTab (notes, tuning, style)
+
+    Note over BE: ── Step 2: GP → MIDI 导出 ──
+    BE->>MC: convert(tab, "/tmp/song.mid")
+    MC->>MC: mido.MidiFile(ticks_per_beat=960)
+    MC->>MC: meta track: set_tempo + time_signature
+    MC->>MC: music track: note_on/note_off 事件
+    MC->>MC: 跳过 tie 音符 (不重复 note_on)
+    MC->>MC: 排序事件 → delta time → 写入
+    MC-->>BE: /tmp/song.mid (Path)
+
+    Note over BE: ── Step 3: Pipeline 重建 ──
+    BE->>PR: run("/tmp/song.mid", "rock", tuning_pitches, 0.5)
+    PR->>LM: load_midi("/tmp/song.mid")
+    LM-->>PR: NormalizedTimeline
+    PR->>CT: classify_timeline(timeline)
+    CT-->>PR: GuitarDetectionReport (primary guitar track)
+    PR->>PR: _resolve_tuning(tuning_pitches, timeline)
+    PR->>PL: create_pipeline(knowledge_dir)
+    PL-->>PR: RepairPipeline (with KnowledgeEngine)
+    PR->>PR: PipelineContext(timeline, track, style="rock",<br/>tuning=tuning, advisor=None, degraded_mode=True)
+    PR->>PL: pipeline.execute(ctx)
+    Note over PL: 运行 7 stages:<br/>Quantize → MeasureSplit → Tie → Voice<br/>→ StreamSeparation → Fingering → Articulation → Assemble
+    PL-->>PR: GuitarProjectIR (重建结果)
+    PR-->>BE: GuitarProjectIR
+
+    Note over BE: ── Step 4: 音符对齐 ──
+    BE->>NA: align(gt_tab, ir)
+    NA->>NA: _extract_ir_notes(ir) → flatten measures
+    NA->>NA: 按 (measure_number, pitch) 分组两侧音符
+    loop 每个 (measure, pitch) 组
+        NA->>NA: _align_group: 贪心最近邻匹配
+        NA->>NA: beat 差 ≤ 0.25 → 匹配成功
+        NA->>NA: alignment_confidence = 1 - diff/0.25
+    end
+    NA-->>BE: list[AlignedNotePair]
+
+    Note over BE: ── Step 5: 偏差计算 ──
+    BE->>DC: calculate(pairs, gt_tab, ir)
+    DC->>DC: 逐对比较 string/fret/hand_position
+    DC->>DC: _compute_chord_match: 按 onset 分组
+    DC->>DC: _compute_metrics: 聚合 5 项核心 + 4 项辅助指标
+    DC->>DC: 构建 per_note + per_measure 明细
+    DC-->>BE: EvaluationReport
+
+    BE-->>CLI: EvaluationReport
+    CLI->>CLI: 序列化为 JSON
+    CLI-->>User: report.json (控制台摘要 + 文件)
+
+%% ═══════════════════════════════════════════════════════
+%% 流程2：批量评估（P0-6）
+%% ═══════════════════════════════════════════════════════
+
+sequenceDiagram
+    actor User
+    participant CLI as CLI
+    participant BE as BatchEvaluator
+    participant FS as 文件系统
+
+    User->>CLI: evaluate --input-dir /data/songs --output report.json
+    CLI->>BE: evaluate_dir("/data/songs")
+
+    BE->>FS: 扫描 .gp3/.gp4/.gp5 文件
+    FS-->>BE: file_list (跳过 .gtp)
+    BE->>BE: total_files = len(file_list)
+
+    loop 每个文件
+        BE->>BE: evaluate_file(file)
+        alt 解析成功
+            BE-->>BE: EvaluationReport (加入 per_file)
+        else 解析失败
+            BE-->>BE: 记录 failed + 错误信息
+        end
+    end
+
+    BE->>BE: _aggregate_metrics(reports)
+    Note over BE: 聚合 overall_metrics<br/>+ per_style metrics<br/>+ worst_files (bottom 10)
+
+    BE-->>CLI: BatchEvaluationResult
+    CLI->>CLI: 写入 report.json
+    CLI->>CLI: 打印摘要表格
+    CLI-->>User: 完成: 1587 成功, 0 失败, 485 跳过<br/>String Match: 72% | Fret Match: 68%
+
+%% ═══════════════════════════════════════════════════════
+%% 流程3：知识提取与 KB 更新（P1 完整闭环）
+%% ═══════════════════════════════════════════════════════
+
+sequenceDiagram
+    actor User
+    participant CLI as CLI
+    participant BE as BatchEvaluator
+    participant SE as StatsExtractor
+    participant PD as PriorsDeriver
+    participant KW as KBWriter
+    participant ABC as ABComparator
+    participant KR as KnowledgeRegistry
+
+    User->>CLI: learn --input-dir /data/songs --kb-root knowledge/
+
+    Note over CLI: ── 阶段1: 批量评估（复用 P0） ──
+    CLI->>BE: evaluate_dir("/data/songs")
+    BE-->>CLI: BatchEvaluationResult + all_gt_tabs
+
+    Note over CLI: ── 阶段2: 统计指法规律 ──
+    CLI->>SE: extract(all_gt_tabs)
+    loop 每个风格组
+        SE->>SE: 统计 open_string_rate
+        SE->>SE: 统计 hand_position_distribution
+        SE->>SE: 统计 string_distribution
+        SE->>SE: 统计 chord_shape_top_k
+        SE->>SE: 统计 avg_string_skip
+        SE->>SE: 统计 note_overlap_rate
+    end
+    SE-->>CLI: {style: StyleStats}
+
+    Note over CLI: ── 阶段3: 反推 Priors ──
+    CLI->>PD: derive(style_stats, source_ids_map)
+    loop 每个风格
+        PD->>PD: _derive_open_string_bias(rate/0.15)
+        PD->>PD: _derive_hand_position_stability(1/(1+change_rate))
+        PD->>PD: _derive_shape_reuse(top_freq/0.1)
+        PD->>PD: _derive_note_overlap(empirical_rate)
+        PD->>PD: clamp 所有值到 [0.3, 2.0]
+        PD->>PD: 标记 source_type="empirical"
+        PD->>PD: 计算 confidence (基于样本量)
+    end
+    PD-->>CLI: list[DerivedPriors]
+
+    Note over CLI: ── 阶段4: 写入新 KB 版本 ──
+    CLI->>KW: write(derived_priors, snapshot_version=None)
+    KW->>KW: 生成 snapshot_version = "2026.08.4"
+    KW->>KW: 加载当前 kb2_performance.json
+    KW->>KW: 用 empirical priors 替换对应 style 的 payload
+    KW->>KW: 更新 provenance.source_type = "empirical"
+    KW->>KW: 更新 provenance.source_ids = [...]
+    KW->>KW: 写入 versions/2026.08.4/kb2_performance.json
+    KW->>KW: 更新 version_manifest.json
+    KW-->>CLI: "2026.08.4" (新版本号)
+
+    Note over CLI: ── 阶段5: A/B 评估对比 ──
+    CLI->>ABC: compare("/data/songs", "2026.08.3", "2026.08.4")
+    ABC->>KR: from_version_dir("versions/2026.08.3")
+    KR-->>ABC: Registry A (hand_authored)
+    ABC->>BE: evaluate_dir("/data/songs", knowledge_dir=version_a)
+    BE-->>ABC: result_a (baseline metrics)
+    ABC->>KR: from_version_dir("versions/2026.08.4")
+    KR-->>ABC: Registry B (empirical)
+    ABC->>BE: evaluate_dir("/data/songs", knowledge_dir=version_b)
+    BE-->>ABC: result_b (new metrics)
+    ABC->>ABC: _compute_delta(metrics_a, metrics_b)
+    Note over ABC: 逐风格对比指标变化<br/>标注提升↑ / 退化↓
+    ABC-->>CLI: delta_report
+
+    CLI->>CLI: 汇总输出
+    CLI-->>User: Baseline: String 72% → New: 78% ↑<br/>3 个风格 priors 已升级为 empirical<br/>新版本: 2026.08.4

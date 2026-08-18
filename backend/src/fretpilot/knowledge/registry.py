@@ -104,6 +104,24 @@ class KnowledgeRegistry:
         """Load all KB assets from a directory."""
         return cls(_build_snapshot_from_assets(Path(assets_dir)))
 
+    @classmethod
+    def from_version_dir(cls, version_dir: Path | str) -> "KnowledgeRegistry":
+        """Load KB assets from a versioned snapshot directory.
+
+        Used by :class:`KBWriter` to load specific KB versions for A/B
+        comparison.  Reuses the same ``_build_snapshot_from_assets()``
+        logic since version directories have the same structure as the
+        active assets directory.
+
+        Args:
+            version_dir: Path to a ``versions/<version>/`` directory
+                containing ``kb*.json`` files.
+
+        Returns:
+            A :class:`KnowledgeRegistry` loaded from the version directory.
+        """
+        return cls(_build_snapshot_from_assets(Path(version_dir)))
+
     @property
     def snapshot(self) -> KnowledgeSnapshot:
         return self._snapshot

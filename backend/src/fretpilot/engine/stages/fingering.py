@@ -3,14 +3,27 @@
 Maps each note's pitch to candidate string/fret positions on the fretboard,
 then scores candidates using KB2 priors to select the optimal fingering.
 Hand position is tracked sequentially for stability.
+
+Chord-onset grouping: simultaneous notes (same start_beat within tolerance)
+are fingered together as a unit — no two notes share a string, the hand span
+stays within physical limits, and compact / known chord shapes are preferred
+via the ``shape_reuse`` and ``power_chord_preference`` priors.
 """
 
 from __future__ import annotations
+
+import itertools
 
 from fretpilot.engine.context import FingeredNote, PipelineContext, VoicedNote
 from fretpilot.guitar.fretboard import FretPosition, candidate_positions
 from fretpilot.guitar.instrument import STANDARD_TUNING, GuitarTuning
 from fretpilot.knowledge.engine import KnowledgeEngine
+
+# Notes within this many beats of each other are treated as a chord.
+_ONSET_TOLERANCE = 0.05  # beats
+
+# Maximum fret span a single hand can cover (index to pinky).
+_MAX_HAND_SPAN = 4  # frets
 
 
 def _digit_for_fret(fret: int, hand_position: int) -> int | None:
@@ -107,6 +120,220 @@ def _score_candidate(
         score += 0.1
 
     return score
+
+
+# ─── Chord-onset grouping ───
+
+
+def _group_by_onset(
+    notes: list[VoicedNote],
+    tolerance: float = _ONSET_TOLERANCE,
+) -> list[list[VoicedNote]]:
+    """Group notes whose start_beat falls within *tolerance* of each other.
+
+    Groups preserve time order.  Single-note groups are returned as
+    single-element lists so the caller can treat them uniformly.
+    """
+    if not notes:
+        return []
+    sorted_notes = sorted(notes, key=lambda n: n.start_beat)
+    groups: list[list[VoicedNote]] = [[sorted_notes[0]]]
+    for note in sorted_notes[1:]:
+        if note.start_beat - groups[-1][0].start_beat <= tolerance:
+            groups[-1].append(note)
+        else:
+            groups.append([note])
+    return groups
+
+
+def _encode_shape(positions: list[FretPosition]) -> str:
+    """Encode a chord shape as ``s1f0,s2f2,s3f2`` (sorted by string)."""
+    ordered = sorted(positions, key=lambda p: p.string)
+    return ",".join(f"s{p.string}f{p.fret}" for p in ordered)
+
+
+def _is_power_chord(positions: list[FretPosition]) -> bool:
+    """True if *positions* form a root+fifth (perfect-fifth interval)."""
+    if len(positions) != 2:
+        return False
+    interval = abs(positions[1].pitch - positions[0].pitch)
+    return interval == 7  # 7 semitones = perfect fifth
+
+
+def _score_chord_combo(
+    positions: list[FretPosition],
+    priors: dict[str, float],
+    notes: list[VoicedNote],
+    prev_fingered: FingeredNote | None,
+    individual_scores: list[float],
+) -> float:
+    """Score a full chord-position combination (lower = better).
+
+    Combines the per-note scores with chord-level bonuses:
+    - **shape_reuse**: prefer compact shapes (adjacent strings, small fret span)
+    - **power_chord_preference**: prefer root+fifth for 2-note groups
+    """
+    total = sum(individual_scores)
+
+    # --- Chord-level: compactness / shape_reuse ---
+    shape_reuse = priors.get("shape_reuse", 1.0)
+
+    # Adjacent-string bonus: all strings within len-1 range
+    strings = sorted(p.string for p in positions)
+    string_spread = strings[-1] - strings[0]
+    if string_spread == len(strings) - 1:
+        # Perfectly adjacent — reward
+        total -= 0.15 * shape_reuse
+
+    # Fret-span penalty: large spans are physically hard
+    frets = [p.fret for p in positions if p.fret > 0]
+    if frets:
+        span = max(frets) - min(frets)
+        if span > _MAX_HAND_SPAN:
+            # Physically impossible — huge penalty
+            total += 10.0
+        else:
+            # Reward compact spans (scaled by shape_reuse)
+            total -= (1.0 / (1.0 + span)) * 0.2 * shape_reuse
+
+    # --- Power chord preference ---
+    power_pref = priors.get("power_chord_preference", 0.0)
+    if power_pref > 0 and _is_power_chord(positions):
+        total -= 0.3 * power_pref
+
+    return total
+
+
+def _select_chord_fingering(
+    notes: list[VoicedNote],
+    priors: dict[str, float],
+    tuning: GuitarTuning,
+    max_fret: int,
+    prev_fingered: FingeredNote | None,
+) -> list[FingeredNote] | None:
+    """Select fingerings for a group of simultaneous notes.
+
+    Returns ``None`` to signal that the caller should fall back to
+    per-note selection (e.g. an unplayable pitch or no valid combination).
+    """
+    # Generate candidates per note
+    all_candidates: list[list[FretPosition]] = []
+    for note in notes:
+        cands = candidate_positions(note.pitch, tuning=tuning, max_fret=max_fret)
+        if not cands:
+            return None  # unplayable → fall back
+        all_candidates.append(cands)
+
+    # Single note → let the caller use _select_fingering
+    if len(notes) == 1:
+        return None
+
+    # Enumerate valid combinations (no same-string conflicts)
+    # Limit search: if any note has > 5 candidates or group > 6 notes,
+    # use greedy assignment to avoid combinatorial explosion.
+    total_combos = 1
+    for c in all_candidates:
+        total_combos *= len(c)
+    if total_combos > 500 or len(notes) > 6:
+        return _greedy_chord_fingering(
+            notes, all_candidates, priors, tuning, max_fret, prev_fingered
+        )
+
+    best_score = float("inf")
+    best_positions: list[FretPosition] | None = None
+
+    for combo in itertools.product(*all_candidates):
+        # Check no duplicate strings
+        used_strings = {p.string for p in combo}
+        if len(used_strings) != len(combo):
+            continue
+
+        # Compute individual scores
+        individual_scores = [
+            _score_candidate(pos, priors, prev_fingered, note.duration_beats)
+            for pos, note in zip(combo, notes)
+        ]
+
+        score = _score_chord_combo(
+            list(combo), priors, notes, prev_fingered, individual_scores
+        )
+        if score < best_score:
+            best_score = score
+            best_positions = list(combo)
+
+    if best_positions is None:
+        return None
+
+    return _build_chord_fingered_notes(
+        notes, best_positions, best_score, prev_fingered
+    )
+
+
+def _greedy_chord_fingering(
+    notes: list[VoicedNote],
+    all_candidates: list[list[FretPosition]],
+    priors: dict[str, float],
+    tuning: GuitarTuning,
+    max_fret: int,
+    prev_fingered: FingeredNote | None,
+) -> list[FingeredNote]:
+    """Greedy chord fingering for large groups.
+
+    Sorts each note's candidates by individual score, then assigns strings
+    greedily (lowest note gets first pick to keep bass on lower strings).
+    """
+    # Sort notes by pitch descending (high notes get high strings)
+    indexed = sorted(enumerate(notes), key=lambda x: x[1].pitch, reverse=True)
+    used_strings: set[int] = set()
+    positions: list[FretPosition | None] = [None] * len(notes)
+
+    for orig_idx, note in indexed:
+        cands = all_candidates[orig_idx]
+        # Sort candidates by score (best first)
+        scored = sorted(
+            cands,
+            key=lambda pos: _score_candidate(
+                pos, priors, prev_fingered, note.duration_beats
+            ),
+        )
+        for pos in scored:
+            if pos.string not in used_strings:
+                positions[orig_idx] = pos
+                used_strings.add(pos.string)
+                break
+
+    # Fallback: if any note couldn't get a unique string, allow duplicates
+    for i, pos in enumerate(positions):
+        if pos is None:
+            positions[i] = all_candidates[i][0]
+
+    return _build_chord_fingered_notes(
+        notes, positions, 0.0, prev_fingered  # type: ignore[arg-type]
+    )
+
+
+def _build_chord_fingered_notes(
+    notes: list[VoicedNote],
+    positions: list[FretPosition],
+    total_score: float,
+    prev_fingered: FingeredNote | None,
+) -> list[FingeredNote]:
+    """Build FingeredNote list from a chord group + chosen positions."""
+    frets = [p.fret for p in positions if p.fret > 0]
+    if frets:
+        hand_position = max(1, min(frets))
+    else:
+        hand_position = prev_fingered.hand_position if prev_fingered else 1
+
+    confidence = max(0.0, min(1.0, 1.0 - abs(total_score) * 0.1))
+
+    result = []
+    for note, pos in zip(notes, positions):
+        digit = _digit_for_fret(pos.fret, hand_position)
+        result.append(
+            _build_fingered_note(note, pos, digit, hand_position, confidence)
+        )
+    return result
 
 
 def _select_fingering(
@@ -214,24 +441,76 @@ class FingeringStage:
 
         # Hand-position continuity is tracked *per stream* so that a low riff
         # does not pull the lead melody's hand away from its phrase position.
-        # When no separation is present every note is "lead", which makes this
-        # loop identical to the single-track path (preserving the prior
-        # byte-for-byte ``prev_fingered`` continuity).
         by_stream: dict[str, list[VoicedNote]] = {}
         for note in ctx.voiced_notes:
             by_stream.setdefault(note.stream, []).append(note)
 
         for stream in ("lead", "rhythm"):
             prev_fingered: FingeredNote | None = None
-            for note in sorted(by_stream.get(stream, []), key=lambda n: n.start_beat):
-                fingered = _select_fingering(
-                    note, priors, instrument_tuning, max_fret, prev_fingered
+            stream_notes = sorted(
+                by_stream.get(stream, []), key=lambda n: n.start_beat
+            )
+            # Group simultaneous notes (chords) and finger them together.
+            groups = _group_by_onset(stream_notes)
+            for group in groups:
+                chord_result = _select_chord_fingering(
+                    group, priors, instrument_tuning, max_fret, prev_fingered
                 )
-                prev_fingered = fingered
-                ctx.fingered_notes.append(fingered)
+                if chord_result is not None:
+                    # Chord group was fingered as a unit
+                    for fingered in chord_result:
+                        ctx.fingered_notes.append(fingered)
+                    prev_fingered = chord_result[-1]
+                else:
+                    # Single note or fallback — use per-note selection
+                    for note in group:
+                        fingered = _select_fingering(
+                            note, priors, instrument_tuning, max_fret, prev_fingered
+                        )
+                        prev_fingered = fingered
+                        ctx.fingered_notes.append(fingered)
+
+        # Apply note_overlap prior: truncate ringing notes for staccato styles.
+        self._apply_note_overlap(ctx.fingered_notes, priors)
 
         ctx.record_stage(self.name)
         return ctx
+
+    @staticmethod
+    def _apply_note_overlap(
+        fingered: list[FingeredNote], priors: dict[str, float]
+    ) -> None:
+        """Truncate note durations based on the ``note_overlap`` prior.
+
+        Low ``note_overlap`` (staccato style) → notes are cut short so they
+        don't ring into the next note on the same string.  High values leave
+        durations intact (legato / let-ring styles).
+        """
+        overlap = priors.get("note_overlap", 1.0)
+        if overlap >= 0.9:
+            return  # style naturally sustains — no truncation
+
+        # Group by string, sort by start_beat, truncate overlaps.
+        by_string: dict[int, list[FingeredNote]] = {}
+        for note in fingered:
+            if note.string is not None:
+                by_string.setdefault(note.string, []).append(note)
+
+        truncate_factor = 1.0 - overlap  # 0.0 = full ring, 1.0 = full cut
+        for string_notes in by_string.values():
+            string_notes.sort(key=lambda n: n.start_beat)
+            for i in range(len(string_notes) - 1):
+                curr = string_notes[i]
+                nxt = string_notes[i + 1]
+                gap = nxt.start_beat - curr.start_beat
+                if gap <= 0:
+                    continue
+                # If the current note would ring past the next note's onset
+                if curr.duration_beats > gap:
+                    # Truncate: leave a small gap proportional to (1 - overlap)
+                    new_duration = gap * (1.0 - truncate_factor * 0.3)
+                    if new_duration < curr.duration_beats:
+                        curr.duration_beats = new_duration
 
 
 __all__ = ["FingeringStage"]

@@ -1,0 +1,166 @@
+{
+  "snapshot_version": "2026.08.17-174035",
+  "schema_version": "1",
+  "status": "approved",
+  "entries": [
+    {
+      "knowledge_id": "kb2-metal-performance",
+      "domain": "kb2_performance",
+      "kind": "fingering_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.2",
+      "status": "approved",
+      "payload": {
+        "shape_reuse": 1.5,
+        "hand_position_stability": 1.4,
+        "palm_mute": 1.6,
+        "staccato": 1.35,
+        "downpicking_bias": 1.35,
+        "note_overlap": 0.7,
+        "timing_looseness": 0.65,
+        "open_string_bias": 0.6
+      },
+      "scope": {
+        "style": [
+          "metal"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "metal-technique-analysis"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "kb2-rock-lead-performance",
+      "domain": "kb2_performance",
+      "kind": "fingering_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.17-174035",
+      "status": "approved",
+      "payload": {
+        "same_string_legato": 1.2,
+        "bend": 1.3,
+        "vibrato": 1.3,
+        "slide": 1.2,
+        "shape_reuse": 0.941176,
+        "hand_position_stability": 0.589674,
+        "note_overlap": 0.698489,
+        "open_string_bias": 2.0,
+        "staccato": 0.3,
+        "string_skip_penalty": 1.25432
+      },
+      "scope": {
+        "style": [
+          "rock"
+        ],
+        "role": [
+          "lead"
+        ]
+      },
+      "provenance": {
+        "source_type": "empirical",
+        "source_ids": [
+          "/var/folders/9w/0ff8b6_j6rz_64npmkm6j1k00000gn/T/elearn_t33ul5x2/tabs/¡¾¶À×à¡¿-°½°üÏà»á.gp5",
+          "/var/folders/9w/0ff8b6_j6rz_64npmkm6j1k00000gn/T/elearn_t33ul5x2/tabs/¡¾¶À×à¡¿-I Believe.gp5",
+          "/var/folders/9w/0ff8b6_j6rz_64npmkm6j1k00000gn/T/elearn_t33ul5x2/tabs/¡¾¶À×à¡¿-Í¯»°.gp5"
+        ],
+        "authored_by": "elearning/learning_loop",
+        "notes": "Derived from 3 ground truth tabs via statistical_mapping"
+      },
+      "evaluation": {
+        "status": "evaluated",
+        "confidence": 0.4725,
+        "tested_against": [
+          "/var/folders/9w/0ff8b6_j6rz_64npmkm6j1k00000gn/T/elearn_t33ul5x2/tabs/¡¾¶À×à¡¿-°½°üÏà»á.gp5",
+          "/var/folders/9w/0ff8b6_j6rz_64npmkm6j1k00000gn/T/elearn_t33ul5x2/tabs/¡¾¶À×à¡¿-I Believe.gp5",
+          "/var/folders/9w/0ff8b6_j6rz_64npmkm6j1k00000gn/T/elearn_t33ul5x2/tabs/¡¾¶À×à¡¿-Í¯»°.gp5"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "kb2-rock-rhythm-performance",
+      "domain": "kb2_performance",
+      "kind": "fingering_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.2",
+      "status": "approved",
+      "payload": {
+        "power_chord_preference": 1.4,
+        "palm_mute": 1.2,
+        "downpicking_bias": 1.25,
+        "shape_reuse": 1.3,
+        "hand_position_stability": 1.35,
+        "note_overlap": 0.75
+      },
+      "scope": {
+        "style": [
+          "rock"
+        ],
+        "role": [
+          "rhythm"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "rock-rhythm-guitar"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "kb2-pop-performance",
+      "domain": "kb2_performance",
+      "kind": "fingering_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.2",
+      "status": "approved",
+      "payload": {
+        "open_string_bias": 1.3,
+        "shape_reuse": 1.1,
+        "hand_position_stability": 1.05,
+        "note_overlap": 0.9,
+        "timing_looseness": 0.8
+      },
+      "scope": {
+        "style": [
+          "pop"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "pop-guitar-basics"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "kb2-funk-performance",
+      "domain": "kb2_performance",
+      "kind": "fingering_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.2",
+      "status": "approved",
+      "payload": {
+        "staccato": 1.6,
+        "open_string_bias": 1.2,
+        "shape_reuse": 1.25,
+        "hand_position_stability": 1.15,
+        "note_overlap": 0.5,
+        "timing_looseness": 0.7
+      },
+      "scope": {
+        "style": [
+          "funk"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "funk-guitar-technique"
+        ]
+      }
+    }
+  ]
+}

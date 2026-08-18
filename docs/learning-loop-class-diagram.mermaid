@@ -1,0 +1,306 @@
+%% FretPilot v2 — 学习闭环类图（数据结构与接口）
+%% 文件: docs/learning-loop-class-diagram.mermaid
+
+classDiagram
+  %% ─── 核心数据模型 ───
+
+  class GroundTruthNote {
+    +measure_number: int
+    +beat_in_measure: float
+    +pitch: int
+    +string: int
+    +fret: int
+    +hand_position: int
+    +duration_beats: float
+    +is_tie: bool
+    +velocity: int
+  }
+
+  class GroundTruthTab {
+    +file_path: str
+    +title: str
+    +style_label: str
+    +tempo_bpm: float
+    +time_signature: tuple~int, int~
+    +tuning_pitches: list~int~
+    +notes: list~GroundTruthNote~
+    +track_name: str
+    +note_count: int
+    +measure_count: int
+  }
+
+  class AlignedNotePair {
+    +gt_note: GroundTruthNote
+    +ir_note: GuitarNoteEvent
+    +alignment_confidence: float
+    +beat_delta: float
+  }
+
+  class EvaluationMetrics {
+    +string_match_rate: float
+    +fret_match_rate: float
+    +position_deviation: float
+    +chord_shape_match: float
+    +overall_fingering_accuracy: float
+    +pitch_accuracy: float
+    +note_count_match: float
+    +measure_alignment_rate: float
+    +total_aligned: int
+    +total_gt_notes: int
+    +total_ir_notes: int
+    +total_unmatched: int
+  }
+
+  class EvaluationReport {
+    +file_path: str
+    +style_label: str
+    +metrics: EvaluationMetrics
+    +per_note: list~dict~
+    +per_measure: list~dict~
+    +warnings: list~str~
+    +timestamp: str
+    +to_dict() dict
+    +from_dict(data) EvaluationReport
+  }
+
+  class BatchEvaluationResult {
+    +total_files: int
+    +successful: int
+    +failed: int
+    +skipped: int
+    +overall_metrics: EvaluationMetrics
+    +per_style: dict~str, EvaluationMetrics~
+    +per_file: list~EvaluationReport~
+    +worst_files: list~EvaluationReport~
+    +timestamp: str
+    +kb_snapshot_version: str
+  }
+
+  class StyleStats {
+    +style_label: str
+    +sample_count: int
+    +total_notes: int
+    +open_string_rate: float
+    +hand_position_distribution: dict~int, float~
+    +string_distribution: dict~int, float~
+    +avg_string_skip: float
+    +chord_shape_top_k: dict~str, int~
+    +note_overlap_rate: float
+    +staccato_rate: float
+    +fret_distribution: dict~int, float~
+  }
+
+  class DerivedPriors {
+    +style_label: str
+    +knowledge_id: str
+    +payload: dict~str, float~
+    +source_ids: list~str~
+    +confidence: float
+    +derivation_method: str
+    +stats_snapshot: dict
+  }
+
+  GroundTruthTab "1" *-- "many" GroundTruthNote : contains
+  AlignedNotePair --> GroundTruthNote : gt_note
+  AlignedNotePair --> GuitarNoteEvent : ir_note
+  EvaluationReport --> EvaluationMetrics : metrics
+  BatchEvaluationResult --> EvaluationMetrics : overall_metrics
+  BatchEvaluationResult "1" *-- "many" EvaluationReport : per_file
+
+  %% ─── 服务类 ───
+
+  class GPReader {
+    +QUARTER_TICKS: int = 960
+    +parse(path, style_label) GroundTruthTab
+    -_select_guitar_track(song) Track
+    -_extract_tuning(track) list~int~
+    -_compute_hand_position(notes) void
+    -_ticks_to_beats(ticks) float
+  }
+
+  class GPMidiConverter {
+    +TPB: int = 960
+    +convert(tab, output_path) Path
+    -_build_events(tab) list
+    -_events_to_track(events, program) MidiTrack
+  }
+
+  class PipelineRunner {
+    -knowledge_dir: str|None
+    +__init__(knowledge_dir)
+    +run(midi_path, style_label, tuning_pitches, midi_fidelity) GuitarProjectIR
+    -_resolve_tuning(tuning_pitches, timeline) GuitarTuning|None
+  }
+
+  class NoteAligner {
+    +BEAT_TOLERANCE: float = 0.25
+    +align(gt_tab, ir) list~AlignedNotePair~
+    -_extract_ir_notes(ir) list~GuitarNoteEvent~
+    -_align_group(gt_notes, ir_notes) list~AlignedNotePair~
+  }
+
+  class DeviationCalculator {
+    +calculate(pairs, gt_tab, ir) EvaluationReport
+    -_compute_metrics(pairs, gt_count, ir_count) EvaluationMetrics
+    -_compute_chord_match(pairs) float
+  }
+
+  class BatchEvaluator {
+    -_reader: GPReader
+    -_converter: GPMidiConverter
+    -_runner: PipelineRunner
+    -_aligner: NoteAligner
+    -_calculator: DeviationCalculator
+    +evaluate_file(gp_path) EvaluationReport
+    +evaluate_dir(input_dir, output_path, max_files) BatchEvaluationResult
+    -_aggregate_metrics(reports) tuple
+  }
+
+  class StatsExtractor {
+    +extract(tabs) dict~str, StyleStats~
+    -_compute_open_string_rate(notes) float
+    -_compute_hand_position_dist(notes) dict
+    -_compute_string_distribution(notes) dict
+    -_compute_chord_shapes(notes, top_k) dict
+    -_compute_avg_string_skip(notes) float
+  }
+
+  class PriorsDeriver {
+    +STYLE_TO_KB_ID: dict
+    +PRIOR_RANGE: tuple = (0.3, 2.0)
+    +derive(style_stats, source_ids_map) list~DerivedPriors~
+    -_derive_open_string_bias(stats) float
+    -_derive_hand_position_stability(stats) float
+    -_derive_shape_reuse(stats) float
+    -_derive_note_overlap(stats) float
+    -_compute_confidence(sample_count, total_notes) float
+  }
+
+  class KBWriter {
+    -knowledge_root: Path
+    +write(derived_priors, snapshot_version) str
+    +list_versions() list~dict~
+    +load_version(version) KnowledgeRegistry
+    +rollback(target_version) void
+    +diff_versions(version_a, version_b) dict
+  }
+
+  class ABComparator {
+    +compare(input_dir, version_a, version_b) dict
+    -_compute_delta(metrics_a, metrics_b) dict
+  }
+
+  class StyleMapper {
+    +map_directory_to_style(dir_name) str
+    +map_file_path_to_style(file_path) str
+    +DIRECTORY_STYLE_MAP: dict
+  }
+
+  %% ─── 服务类之间的关系 ───
+
+  BatchEvaluator --> GPReader : uses
+  BatchEvaluator --> GPMidiConverter : uses
+  BatchEvaluator --> PipelineRunner : uses
+  BatchEvaluator --> NoteAligner : uses
+  BatchEvaluator --> DeviationCalculator : uses
+
+  GPReader ..> GroundTruthTab : creates
+  GPMidiConverter ..> GroundTruthTab : reads
+  PipelineRunner ..> GuitarProjectIR : creates
+  NoteAligner ..> AlignedNotePair : creates
+  NoteAligner --> GroundTruthTab : reads
+  NoteAligner --> GuitarProjectIR : reads
+  DeviationCalculator ..> EvaluationReport : creates
+  DeviationCalculator --> AlignedNotePair : reads
+
+  StatsExtractor --> GroundTruthTab : reads
+  StatsExtractor ..> StyleStats : creates
+  PriorsDeriver --> StyleStats : reads
+  PriorsDeriver ..> DerivedPriors : creates
+  KBWriter --> DerivedPriors : writes
+  KBWriter ..> KnowledgeRegistry : loads versions
+  ABComparator --> BatchEvaluator : uses for A/B
+
+  GPReader --> StyleMapper : infers style
+  GroundTruthTab --> StyleMapper : style_label from
+
+  %% ─── 与现有系统的集成 ───
+
+  class GuitarNoteEvent {
+    <<from ir/models.py>>
+    +id: str
+    +pitch: int
+    +score: ScoreTiming
+    +fingering: IRFingering
+  }
+
+  class GuitarProjectIR {
+    <<from ir/models.py>>
+    +title: str
+    +tracks: list~GuitarTrackIR~
+    +style_label: str
+  }
+
+  class IRFingering {
+    <<from ir/models.py>>
+    +string: int|None
+    +fret: int|None
+    +hand_position: int|None
+  }
+
+  class ScoreTiming {
+    <<from ir/models.py>>
+    +measure_number: int
+    +beat_in_measure: float
+    +start_beat: float
+  }
+
+  class KnowledgeRegistry {
+    <<from knowledge/registry.py>>
+    +from_assets_dir(assets_dir) KnowledgeRegistry
+    +from_version_dir(version_dir) KnowledgeRegistry
+    +query_payload(domain, scope) dict
+  }
+
+  class KnowledgeEntry {
+    <<from knowledge/models.py>>
+    +knowledge_id: str
+    +payload: dict
+    +provenance: KnowledgeProvenance
+    +from_dict(data) KnowledgeEntry
+    +to_dict() dict
+  }
+
+  class KnowledgeProvenance {
+    <<from knowledge/models.py>>
+    +source_type: str
+    +source_ids: tuple
+  }
+
+  class RepairPipeline {
+    <<from engine/pipeline.py>>
+    +execute(ctx) GuitarProjectIR
+  }
+
+  class PipelineContext {
+    <<from engine/context.py>>
+    +timeline: NormalizedTimeline
+    +track: NormalizedTrack
+    +style_label: str
+    +tuning: GuitarTuning|None
+  }
+
+  GuitarProjectIR "1" *-- "many" GuitarTrackIR : tracks
+  GuitarTrackIR "1" *-- "many" GuitarMeasure : measures
+  GuitarMeasure "1" *-- "many" GuitarNoteEvent : events
+  GuitarNoteEvent --> ScoreTiming : score
+  GuitarNoteEvent --> IRFingering : fingering
+
+  PipelineRunner --> RepairPipeline : creates & executes
+  PipelineRunner --> PipelineContext : builds
+  RepairPipeline ..> GuitarProjectIR : produces
+  PipelineContext --> NormalizedTimeline : reads
+
+  KBWriter --> KnowledgeRegistry : version management
+  KnowledgeRegistry --> KnowledgeEntry : queries
+  KnowledgeEntry --> KnowledgeProvenance : has

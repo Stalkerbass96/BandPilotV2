@@ -95,6 +95,36 @@ class KnowledgeEntry:
                 return False
         return True
 
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a JSON-compatible dict (inverse of :meth:`from_dict`).
+
+        Tuples are converted to lists for JSON compatibility.  The output
+        matches the on-disk JSON format used in ``kb*.json`` asset files.
+        """
+        return {
+            "knowledge_id": self.knowledge_id,
+            "domain": self.domain,
+            "kind": self.kind,
+            "schema_version": self.schema_version,
+            "knowledge_version": self.knowledge_version,
+            "status": self.status,
+            "payload": dict(self.payload),
+            "scope": {
+                k: list(v) for k, v in self.scope.items()
+            },
+            "provenance": {
+                "source_type": self.provenance.source_type,
+                "source_ids": list(self.provenance.source_ids),
+                "authored_by": self.provenance.authored_by,
+                "notes": self.provenance.notes,
+            },
+            "evaluation": {
+                "status": self.evaluation.status,
+                "confidence": self.evaluation.confidence,
+                "tested_against": list(self.evaluation.tested_against),
+            },
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class KnowledgeSnapshot:
