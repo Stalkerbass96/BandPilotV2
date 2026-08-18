@@ -47,7 +47,7 @@ class NoteAligner:
 
         logger.debug(
             "Aligned %d/%d GT notes with %d IR notes → %d pairs",
-            len(gt_tab.notes),
+            len(pairs),
             len(gt_tab.notes),
             len(ir_notes),
             len(pairs),

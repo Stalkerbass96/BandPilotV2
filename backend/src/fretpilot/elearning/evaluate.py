@@ -20,7 +20,6 @@ from fretpilot.elearning.models import (
     BatchEvaluationResult,
     EvaluationMetrics,
     EvaluationReport,
-    GroundTruthTab,
 )
 from fretpilot.elearning.note_aligner import NoteAligner
 from fretpilot.elearning.pipeline_runner import PipelineRunner
@@ -95,8 +94,6 @@ class BatchEvaluator:
 
         reports: list[EvaluationReport] = []
         failed = 0
-        skipped = 0
-        all_gt_tabs: list[GroundTruthTab] = []
 
         for i, gp_path in enumerate(gp_files):
             try:
@@ -122,7 +119,7 @@ class BatchEvaluator:
             total_files=len(gp_files),
             successful=len(reports),
             failed=failed,
-            skipped=skipped,
+            skipped=0,
             overall_metrics=overall,
             per_style=per_style,
             worst_files=worst,
