@@ -53,7 +53,7 @@ class RepairPipeline:
             MeasureSplitStage(),
             TieStage(),
             VoiceStage(),
-            StreamSeparationStage(),
+            StreamSeparationStage(engine),
             FingeringStage(engine),
             ArticulationStage(engine),
             self._assemble,

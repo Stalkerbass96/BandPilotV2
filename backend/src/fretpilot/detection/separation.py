@@ -29,6 +29,7 @@ The detection pipeline mirrors the architect's pseudo-code:
 
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass, field
 from statistics import median
 from typing import Literal
@@ -158,8 +159,11 @@ def _find_best_split(
     cluster and the high lead cluster even without a gap, so the riff stays
     whole instead of being sliced in half.
 
-    ``low_prior`` optionally constrains the split to a window; ``min_gap`` is
-    kept for signature compatibility but no longer gates the split.
+    ``low_prior`` constrains the split to a window (e.g. the riff register);
+    ``min_gap`` is kept for signature compatibility but no longer gates the
+    split.  The **soft-prior fallback** (retrying without a window when the
+    constrained split is unusable) lives in :func:`_resolve_split`, which also
+    enforces ``min_side_notes``.
     """
     pitches = sorted(n.pitch for n in notes)
     n = len(pitches)
@@ -209,6 +213,35 @@ def _find_best_split(
     else:
         score = _clamp(1.0 - best_cost / total_var, 0.0, 1.0)
     return best_split, score
+
+
+def _resolve_split(
+    notes: list[SeparationNote],
+    low_prior: tuple[int, int] | None,
+    min_gap: int,
+    min_side_notes: int,
+) -> tuple[int, float] | None:
+    """Resolve a usable split point, applying ``low_prior`` as a soft prior.
+
+    First tries the ``low_prior`` window; if that yields no split, or a split
+    whose low/high partition has fewer than ``min_side_notes`` notes on either
+    side, retries without the window.  A wrong/over-tight prior therefore never
+    suppresses a real split.
+    """
+    windows = [low_prior] if low_prior is not None else [None]
+    if low_prior is not None:
+        windows.append(None)
+
+    for window in windows:
+        best = _find_best_split(notes, window, min_gap)
+        if best is None:
+            continue
+        split_pitch, gap_score = best
+        low = sum(1 for n in notes if n.pitch < split_pitch)
+        high = sum(1 for n in notes if n.pitch >= split_pitch)
+        if low >= min_side_notes and high >= min_side_notes:
+            return split_pitch, gap_score
+    return None
 
 
 # ─── Signal 2: coactive onsets ───
@@ -355,105 +388,118 @@ def detect_separation(
     min_coactive_onsets: int = 2,
     min_gap_semitones: int = 5,
     confidence_threshold: float = 0.5,
+    max_gap_measures: int = 1,
 ) -> SeparationReport:
-    """Detect riff/melody separation across the WHOLE track.
+    """Detect riff/melody separation on a **per-measure** basis.
 
-    The split is computed globally (one split pitch for the whole track), not
-    per measure.  A per-measure split turned out to be wrong: a riff pitch
-    (e.g. A2=45) got assigned to Rhythm in some measures and to Lead in others,
-    slicing the riff in half.  A single global split keeps every riff note on
-    one track and every lead note on the other, which is what the user wants
-    ("separate the high lead out, keep the low riff whole").
+    Notes are grouped by measure; each measure is tested independently for a
+    "low riff + high melody co-sounding" mix (bimodal pitch split within the
+    ``low_prior`` register window + coactive-onset gate + duration contrast).
+    Adjacent candidate measures are merged into contiguous segments whose
+    split pitch is the median of the member measures (keeps the riff from being
+    sliced by per-measure split jitter), then low-confidence segments are
+    dropped (segment-level fallback).
 
-    Returns a :class:`SeparationReport` whose ``segments`` holds a single
-    track-wide segment when separation is confident, else is empty (single
-    track).
+    Only measures inside an active segment are split; every other measure keeps
+    the single-track "lead" stream — so a whole-track pure melody is never hard
+    split into an empty rhythm track.
+
+    ``low_prior`` constrains the split to the guitar's riff register (e.g.
+    ``(E2, G3)`` = ``(40, 55)`` for standard tuning).  The caller (pipeline
+    stage) derives this from the resolved tuning + style knowledge; ``None``
+    falls back to a purely statistical split.
     """
     if len(notes) < 2 * min_side_notes:
         return SeparationReport(detected=False, segments=[], total_confidence=0.0)
 
-    best = _find_best_split(notes, low_prior, min_gap_semitones)
-    if best is None:
-        return SeparationReport(detected=False, segments=[], total_confidence=0.0)
-    split_pitch, gap_score = best
+    by_measure: dict[int, list[SeparationNote]] = defaultdict(list)
+    for note in notes:
+        by_measure[note.measure_number].append(note)
 
-    low = [n for n in notes if n.pitch < split_pitch]
-    high = [n for n in notes if n.pitch >= split_pitch]
-    if len(low) < min_side_notes or len(high) < min_side_notes:
-        return SeparationReport(detected=False, segments=[], total_confidence=0.0)
+    candidates: list[SeparationSegment] = []
+    for mnum in sorted(by_measure):
+        mnotes = by_measure[mnum]
+        if len(mnotes) < 2 * min_side_notes:
+            continue
 
-    # The two-cluster split score is the primary signal: a clear bimodal pitch
-    # distribution (riff cluster + lead cluster) has a high gap_score, whereas
-    # a single wide-range melody is unimodal and scores low.
-    if gap_score < 0.5:
-        return SeparationReport(
-            detected=False,
-            segments=[],
-            total_confidence=0.0,
-            warnings=[
-                "Pitch distribution is not clearly bimodal; skipping separation "
-                "(likely a single wide-range melody)."
-            ],
+        best = _resolve_split(mnotes, low_prior, min_gap_semitones, min_side_notes)
+        if best is None:
+            continue
+        split_pitch, gap_score = best
+
+        low = [n for n in mnotes if n.pitch < split_pitch]
+        high = [n for n in mnotes if n.pitch >= split_pitch]
+
+        # A clear bimodal pitch distribution (riff cluster + lead cluster) has
+        # a high gap_score; a single wide-range melody is unimodal and low.
+        if gap_score < 0.5:
+            continue
+
+        # Coactive onsets are a *soft* gate: a true riff+lead mix has the two
+        # lines sounding together, so at least a few low onsets co-occur with
+        # high onsets.  A sequential low-then-high melody has zero coactive
+        # onsets.  Deliberately loose (≥2 coactive, ≥25% ratio).
+        poly_ratio, coactive = _coactive_onsets(low, high, _ONSET_TOLERANCE)
+        if coactive < min_coactive_onsets or poly_ratio < 0.25:
+            continue
+
+        duration_score = _duration_contrast(low, high)
+        confidence = _clamp(
+            0.40 * gap_score + 0.30 * poly_ratio + 0.30 * duration_score, 0.0, 1.0
+        )
+        candidates.append(
+            SeparationSegment(
+                start_measure=mnum,
+                end_measure=mnum,
+                split_pitch=split_pitch,
+                low_note_count=len(low),
+                high_note_count=len(high),
+                confidence=confidence,
+                features={
+                    "gap": gap_score,
+                    "poly": poly_ratio,
+                    "duration": duration_score,
+                },
+                reason=f"measure {mnum} split at pitch {split_pitch} "
+                f"(riff {len(low)} / lead {len(high)})",
+            )
         )
 
-    # Coactive onsets are a *soft* gate: a true riff+lead mix has the two lines
-    # sounding together, so at least a few low onsets co-occur with high onsets.
-    # A sequential low-then-high melody has *zero* coactive onsets.  The gate is
-    # deliberately loose (≥2 coactive onsets, ≥25% ratio) because real tracks
-    # interleave riff and lead rather than aligning them exactly.
-    poly_ratio, coactive = _coactive_onsets(low, high, _ONSET_TOLERANCE)
-    if coactive < min_coactive_onsets or poly_ratio < 0.25:
-        return SeparationReport(
-            detected=False,
-            segments=[],
-            total_confidence=0.0,
-            warnings=[
-                "Low and high registers do not co-sound; skipping separation "
-                "(likely a sequential wide-range melody, not a riff + lead mix)."
-            ],
-        )
+    segments = _merge_adjacent(candidates, max_gap_measures)
 
-    duration_score = _duration_contrast(low, high)
-    confidence = _clamp(
-        0.40 * gap_score + 0.30 * poly_ratio + 0.30 * duration_score, 0.0, 1.0
-    )
-
-    start_measure = min(n.measure_number for n in notes)
-    end_measure = max(n.measure_number for n in notes)
-    segment = SeparationSegment(
-        start_measure=start_measure,
-        end_measure=end_measure,
-        split_pitch=split_pitch,
-        low_note_count=len(low),
-        high_note_count=len(high),
-        confidence=confidence,
-        features={"gap": gap_score, "poly": poly_ratio, "duration": duration_score},
-        reason=(
-            f"global split at pitch {split_pitch} "
-            f"(riff {len(low)} / lead {len(high)})"
-        ),
-    )
-
+    # Segment-level fallback: drop low-confidence segments, keep the rest.
+    active: list[SeparationSegment] = []
     warnings: list[str] = []
-    if confidence < confidence_threshold:
-        return SeparationReport(
-            detected=False,
-            segments=[],
-            total_confidence=0.0,
-            warnings=[
-                f"Separation confidence {confidence:.2f} < {confidence_threshold}; "
+    for segment in segments:
+        if segment.confidence < confidence_threshold:
+            warnings.append(
+                f"Measures {segment.start_measure}-{segment.end_measure} "
+                f"confidence {segment.confidence:.2f} < {confidence_threshold}; "
                 "keeping a single track."
-            ],
-        )
-    if confidence < _REVIEW_THRESHOLD:
-        warnings.append(
-            f"Separated into Lead/Rhythm (confidence {confidence:.2f}); review recommended."
-        )
+            )
+        elif segment.confidence < _REVIEW_THRESHOLD:
+            active.append(segment)
+            warnings.append(
+                f"Separated measures {segment.start_measure}-{segment.end_measure} "
+                f"into Lead/Rhythm (confidence {segment.confidence:.2f}); "
+                "review recommended."
+            )
+        else:
+            active.append(segment)
+
+    total_confidence = 0.0
+    if active:
+        total_notes = sum(seg.note_count for seg in active)
+        if total_notes > 0:
+            total_confidence = round(
+                sum(seg.confidence * seg.note_count for seg in active) / total_notes,
+                4,
+            )
 
     return SeparationReport(
-        detected=True,
-        segments=[segment],
-        total_confidence=confidence,
+        detected=bool(active),
+        segments=active,
+        total_confidence=total_confidence,
         warnings=warnings,
     )
 

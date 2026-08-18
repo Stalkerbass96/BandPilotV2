@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from fretpilot.detection.separation import (
     SeparationNote,
@@ -30,6 +31,9 @@ from fretpilot.detection.separation import (
     detect_separation,
 )
 from fretpilot.engine.context import PipelineContext, VoicedNote
+
+if TYPE_CHECKING:
+    from fretpilot.knowledge.engine import KnowledgeEngine
 
 
 def _project(note: VoicedNote) -> SeparationNote:
@@ -67,10 +71,58 @@ def _assign_streams(
     return by_source
 
 
+def _riff_register_prior(
+    tuning,
+    low_register_bias: float,
+) -> tuple[int, int] | None:
+    """Derive the riff-register split window from the tuning + style knowledge.
+
+    The riff sits on the low strings; the split point that separates riff from
+    melody must land within the open-pitch span of those strings.  The number
+    of "riff strings" is scaled by the KB1 ``low_register_bias``: styles that
+    favour the low register (metal) get a wider window, low-register-light
+    styles (funk) a narrower one.
+
+    Returns ``(riff_lo, riff_hi)`` (both MIDI pitches, inclusive), or ``None``
+    when the tuning provides no string pitches (caller falls back to a purely
+    statistical split).
+    """
+    if tuning is None or not tuning.string_pitches:
+        return None
+
+    pitches = tuning.string_pitches  # low → high
+    riff_lo = pitches[0]
+
+    if low_register_bias >= 1.2:
+        riff_strings = 5
+    elif low_register_bias >= 0.9:
+        riff_strings = 4
+    else:
+        riff_strings = 3
+    riff_strings = min(riff_strings, len(pitches))
+
+    riff_hi = pitches[riff_strings - 1]
+    return riff_lo, riff_hi
+
+
 class StreamSeparationStage:
     """S4.5: Detect and apply riff/melody stream separation."""
 
     name = "stream_separation"
+
+    def __init__(self, engine: "KnowledgeEngine | None" = None) -> None:
+        self._engine = engine
+
+    def _resolve_low_prior(self, ctx: PipelineContext) -> tuple[int, int] | None:
+        """Resolve the riff-register split window for this track.
+
+        Uses the KB1 ``low_register_bias`` for the track's style label when a
+        knowledge engine is available; otherwise falls back to a neutral bias.
+        """
+        bias = 1.0
+        if self._engine is not None:
+            bias = self._engine.get_low_register_bias(ctx.style_label)
+        return _riff_register_prior(ctx.tuning, bias)
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         if not ctx.voiced_notes:
@@ -89,7 +141,8 @@ class StreamSeparationStage:
 
         in_range = [n for n in ctx.voiced_notes if n.pitch >= min_pitch]
         projections = [_project(n) for n in in_range]
-        report = detect_separation(projections)
+        low_prior = self._resolve_low_prior(ctx)
+        report = detect_separation(projections, low_prior=low_prior)
         ctx.separation = report
 
         stream_by_source = _assign_streams(ctx.voiced_notes, report)

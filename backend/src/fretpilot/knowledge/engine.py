@@ -72,6 +72,32 @@ class KnowledgeEngine:
             return int(raw[0]), int(raw[1])
         return None
 
+    def get_arrangement_priors(self, style_label: str) -> dict[str, float]:
+        """Return KB1 arrangement priors for a style as floats.
+
+        Includes ``low_register_bias`` (how strongly the style favours the low
+        register), ``note_density_range`` (list, skipped), ``power_chord_bias``,
+        and ``rhythmic_pattern_reuse``.
+        """
+        payload = self.registry.query_payload(
+            domain="kb1_arrangement",
+            scope={"style": [style_label]},
+        )
+        return {
+            k: float(v)
+            for k, v in payload.items()
+            if isinstance(v, (int, float))
+        }
+
+    def get_low_register_bias(self, style_label: str) -> float:
+        """Return the KB1 ``low_register_bias`` for a style (default 1.0).
+
+        Higher values mean the style favours the low register (e.g. metal),
+        so the riff register is treated as wider; lower values (e.g. funk)
+        narrow it.  Unknown styles fall back to a neutral 1.0.
+        """
+        return self.get_arrangement_priors(style_label).get("low_register_bias", 1.0)
+
     def _query_kb2_payload(self, style_label: str, role: str) -> dict[str, Any]:
         """Resolve the KB2 entry payload for a style (+ optional role)."""
         scope: dict[str, list[str]] = {"style": [style_label]}
