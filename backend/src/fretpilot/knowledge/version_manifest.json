@@ -1,38 +1,52 @@
 {
-  "versions": [
-    {
-      "version": "2026.08.17-174035",
-      "timestamp": "2026-08-17T17:40:35.309441+00:00",
-      "source_type": "empirical",
-      "styles_updated": [
-        "rock"
-      ],
-      "knowledge_ids_updated": [
-        "kb2-rock-lead-performance"
-      ],
-      "total_sources": 3,
-      "avg_confidence": 0.4725,
-      "method": "statistical_mapping"
-    },
-    {
-      "version": "2026.08.18-110010",
-      "timestamp": "2026-08-18T11:00:11.006729+00:00",
-      "source_type": "empirical",
-      "styles_updated": [
-        "rock",
-        "pop",
-        "funk"
-      ],
-      "knowledge_ids_updated": [
-        "kb2-rock-lead-performance",
-        "kb2-pop-performance",
-        "kb2-funk-performance"
-      ],
-      "total_sources": 809,
-      "avg_confidence": 0.9700000000000001,
-      "method": "statistical_mapping"
-    }
-  ],
-  "active_version": "2026.08.18-110010",
-  "last_updated": "2026-08-18T11:00:11.006729+00:00"
+ "versions": [
+  {
+   "version": "2026.08.17-174035",
+   "timestamp": "2026-08-17T17:40:35.309441+00:00",
+   "source_type": "empirical",
+   "styles_updated": [
+    "rock"
+   ],
+   "knowledge_ids_updated": [
+    "kb2-rock-lead-performance"
+   ],
+   "total_sources": 3,
+   "avg_confidence": 0.4725,
+   "method": "statistical_mapping"
+  },
+  {
+   "version": "2026.08.18-110010",
+   "timestamp": "2026-08-18T11:00:11.006729+00:00",
+   "source_type": "empirical",
+   "styles_updated": [
+    "rock",
+    "pop",
+    "funk"
+   ],
+   "knowledge_ids_updated": [
+    "kb2-rock-lead-performance",
+    "kb2-pop-performance",
+    "kb2-funk-performance"
+   ],
+   "total_sources": 809,
+   "avg_confidence": 0.9700000000000001,
+   "method": "statistical_mapping"
+  },
+  {
+   "version": "2026.08.18-123416",
+   "timestamp": "2026-08-18T12:34:16.512410+00:00",
+   "source_type": "textbook",
+   "styles_updated": [
+    "metal"
+   ],
+   "knowledge_ids_updated": [
+    "kb2-metal-performance"
+   ],
+   "total_sources": 1,
+   "avg_confidence": 0.9,
+   "method": "textbook_ingestion"
+  }
+ ],
+ "active_version": "2026.08.18-123416",
+ "last_updated": "2026-08-18T12:34:16.512410+00:00"
 }

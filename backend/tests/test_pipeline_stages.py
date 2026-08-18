@@ -430,14 +430,20 @@ class TestGetFingeringChordShapes:
         for key in list(rock)[:3]:
             assert key in unknown
 
-    def test_metal_entry_without_shapes_uses_ensemble(
+    def test_metal_returns_textbook_power_chord_shapes(
         self, engine: KnowledgeEngine
     ) -> None:
-        # metal's entry carries no chord_shapes (undersampled) → merged fallback.
+        # metal's entry now carries textbook-derived chord_shapes (Troy
+        # Stetina "Speed & Thrash Metal Guitar Method") instead of falling
+        # back to the merged ensemble.
         shapes = engine.get_fingering_chord_shapes("metal")
         assert shapes
-        rock = engine.get_fingering_chord_shapes("rock", "lead")
-        assert any(k in shapes for k in list(rock)[:3])
+        # Canonical movable power-chord forms are the book's core shapes:
+        # 2-string root+fifth on the 6th (s5f2,s6f0 = E5 open) and 5th
+        # (s4f2,s5f0 = A5 open).  The fifth sits +2 frets on the adjacent
+        # string (tuned a perfect 4th), never at the same fret.
+        assert "s5f2,s6f0" in shapes
+        assert "s4f2,s5f0" in shapes
 
     def test_empty_registry_returns_empty(self) -> None:
         from fretpilot.knowledge.engine import KnowledgeEngine
