@@ -72,10 +72,8 @@ class KnowledgeEngine:
             return int(raw[0]), int(raw[1])
         return None
 
-    def get_fingering_priors(
-        self, style_label: str, role: str = ""
-    ) -> dict[str, float]:
-        """Return KB2 fingering priors for a style (+ optional role)."""
+    def _query_kb2_payload(self, style_label: str, role: str) -> dict[str, Any]:
+        """Resolve the KB2 entry payload for a style (+ optional role)."""
         scope: dict[str, list[str]] = {"style": [style_label]}
         if role and role != "unknown":
             scope["role"] = [role]
@@ -86,11 +84,44 @@ class KnowledgeEngine:
             payload = self.registry.query_payload(
                 domain="kb2_performance", scope={"style": [style_label]}
             )
+        return payload or {}
+
+    def get_fingering_priors(
+        self, style_label: str, role: str = ""
+    ) -> dict[str, float]:
+        """Return KB2 fingering priors for a style (+ optional role)."""
+        payload = self._query_kb2_payload(style_label, role)
         return {
             k: float(v)
             for k, v in payload.items()
             if isinstance(v, (int, float))
         }
+
+    def get_fingering_chord_shapes(
+        self, style_label: str, role: str = ""
+    ) -> dict[str, int]:
+        """Return the style's empirically learned top-K chord shapes.
+
+        Shape keys are canonical ``s1f0,s2f2,...`` strings; values are the
+        observed occurrence counts from the reference GP corpus.
+
+        For unknown / unmatched styles — or styles whose entry has no
+        ``chord_shapes`` (e.g. undersampled metal) — returns the merged
+        ensemble across all style entries, so the learned knowledge still
+        applies instead of degrading to pure defaults.
+        """
+        payload = self._query_kb2_payload(style_label, role)
+        shapes = payload.get("chord_shapes")
+        if isinstance(shapes, dict) and shapes:
+            return {str(k): int(v) for k, v in shapes.items()}
+
+        merged: dict[str, int] = {}
+        for entry in self.registry.query(domain="kb2_performance"):
+            cs = entry.payload.get("chord_shapes")
+            if isinstance(cs, dict):
+                for key, count in cs.items():
+                    merged[str(key)] = merged.get(str(key), 0) + int(count)
+        return merged
 
     def get_notation_convention(
         self, format_id: str

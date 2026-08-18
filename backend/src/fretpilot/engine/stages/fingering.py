@@ -25,6 +25,12 @@ _ONSET_TOLERANCE = 0.05  # beats
 # Maximum fret span a single hand can cover (index to pinky).
 _MAX_HAND_SPAN = 4  # frets
 
+# A chord that mixes an open string with frets at or above this position is
+# treated as a non-human "cross-string open/high" mix (e.g. s5f0,s6f10) and
+# penalized — unless the exact shape was empirically learned as common.
+_OPEN_MIX_FRET_MIN = 5  # frets
+_OPEN_MIX_PENALTY = 0.3
+
 
 def _digit_for_fret(fret: int, hand_position: int) -> int | None:
     """Estimate the fretting finger (1=index ... 4=pinky) for a fret."""
@@ -160,22 +166,25 @@ def _is_power_chord(positions: list[FretPosition]) -> bool:
     return interval == 7  # 7 semitones = perfect fifth
 
 
-def _score_chord_combo(
+def _chord_combo_adjustment(
     positions: list[FretPosition],
     priors: dict[str, float],
-    notes: list[VoicedNote],
-    prev_fingered: FingeredNote | None,
-    individual_scores: list[float],
+    chord_shapes: dict[str, int] | None = None,
 ) -> float:
-    """Score a full chord-position combination (lower = better).
+    """Chord-level score adjustment (negative = bonus, positive = penalty).
 
-    Combines the per-note scores with chord-level bonuses:
+    Combines:
     - **shape_reuse**: prefer compact shapes (adjacent strings, small fret span)
     - **power_chord_preference**: prefer root+fifth for 2-note groups
+    - **chord_shapes** (empirically learned): reward candidate shapes that
+      match the style's top-K learned shapes, proportional to frequency
+    - **open/high mix**: penalize a chord that mixes an open string with frets
+      >= ``_OPEN_MIX_FRET_MIN`` (the "cross-string 5 and 0" anti-pattern)
+      unless that exact shape was learned as common
     """
-    total = sum(individual_scores)
+    delta = 0.0
 
-    # --- Chord-level: compactness / shape_reuse ---
+    # --- Compactness / shape_reuse ---
     shape_reuse = priors.get("shape_reuse", 1.0)
 
     # Adjacent-string bonus: all strings within len-1 range
@@ -183,7 +192,7 @@ def _score_chord_combo(
     string_spread = strings[-1] - strings[0]
     if string_spread == len(strings) - 1:
         # Perfectly adjacent — reward
-        total -= 0.15 * shape_reuse
+        delta -= 0.15 * shape_reuse
 
     # Fret-span penalty: large spans are physically hard
     frets = [p.fret for p in positions if p.fret > 0]
@@ -191,16 +200,50 @@ def _score_chord_combo(
         span = max(frets) - min(frets)
         if span > _MAX_HAND_SPAN:
             # Physically impossible — huge penalty
-            total += 10.0
+            delta += 10.0
         else:
             # Reward compact spans (scaled by shape_reuse)
-            total -= (1.0 / (1.0 + span)) * 0.2 * shape_reuse
+            delta -= (1.0 / (1.0 + span)) * 0.2 * shape_reuse
 
     # --- Power chord preference ---
     power_pref = priors.get("power_chord_preference", 0.0)
     if power_pref > 0 and _is_power_chord(positions):
-        total -= 0.3 * power_pref
+        delta -= 0.3 * power_pref
 
+    # --- Empirically learned chord shapes ---
+    shape_key = _encode_shape(positions)
+    if chord_shapes:
+        count = chord_shapes.get(shape_key)
+        if count:
+            # Reward matches proportionally to empirical frequency (0.1–0.3).
+            max_count = max(chord_shapes.values()) or 1
+            delta -= 0.1 + 0.2 * (count / max_count)
+
+    # --- Open string mixed into a high position (un-human cross-string) ---
+    all_frets = [p.fret for p in positions]
+    if any(f == 0 for f in all_frets) and max(all_frets) >= _OPEN_MIX_FRET_MIN:
+        # Learned-common shapes are exempt; everything else is a suspect mix.
+        if not (chord_shapes and shape_key in chord_shapes):
+            delta += _OPEN_MIX_PENALTY
+
+    return delta
+
+
+def _score_chord_combo(
+    positions: list[FretPosition],
+    priors: dict[str, float],
+    notes: list[VoicedNote],
+    prev_fingered: FingeredNote | None,
+    individual_scores: list[float],
+    chord_shapes: dict[str, int] | None = None,
+) -> float:
+    """Score a full chord-position combination (lower = better).
+
+    Combines the per-note scores with chord-level bonuses (see
+    ``_chord_combo_adjustment``).
+    """
+    total = sum(individual_scores)
+    total += _chord_combo_adjustment(positions, priors, chord_shapes)
     return total
 
 
@@ -210,6 +253,7 @@ def _select_chord_fingering(
     tuning: GuitarTuning,
     max_fret: int,
     prev_fingered: FingeredNote | None,
+    chord_shapes: dict[str, int] | None = None,
 ) -> list[FingeredNote] | None:
     """Select fingerings for a group of simultaneous notes.
 
@@ -236,7 +280,8 @@ def _select_chord_fingering(
         total_combos *= len(c)
     if total_combos > 500 or len(notes) > 6:
         return _greedy_chord_fingering(
-            notes, all_candidates, priors, tuning, max_fret, prev_fingered
+            notes, all_candidates, priors, tuning, max_fret, prev_fingered,
+            chord_shapes,
         )
 
     best_score = float("inf")
@@ -255,7 +300,8 @@ def _select_chord_fingering(
         ]
 
         score = _score_chord_combo(
-            list(combo), priors, notes, prev_fingered, individual_scores
+            list(combo), priors, notes, prev_fingered, individual_scores,
+            chord_shapes,
         )
         if score < best_score:
             best_score = score
@@ -276,6 +322,7 @@ def _greedy_chord_fingering(
     tuning: GuitarTuning,
     max_fret: int,
     prev_fingered: FingeredNote | None,
+    chord_shapes: dict[str, int] | None = None,
 ) -> list[FingeredNote]:
     """Greedy chord fingering for large groups.
 
@@ -307,8 +354,13 @@ def _greedy_chord_fingering(
         if pos is None:
             positions[i] = all_candidates[i][0]
 
+    # Apply chord-level adjustment (learned shapes / open-mix penalty) so the
+    # greedy path uses the same human-knowledge signals as the exhaustive one.
+    valid = [p for p in positions if p is not None]
+    adjustment = _chord_combo_adjustment(valid, priors, chord_shapes)
+
     return _build_chord_fingered_notes(
-        notes, positions, 0.0, prev_fingered  # type: ignore[arg-type]
+        notes, positions, adjustment, prev_fingered  # type: ignore[arg-type]
     )
 
 
@@ -438,6 +490,12 @@ class FingeringStage:
             max_fret = self._max_fret
 
         priors = self._engine.get_fingering_priors(ctx.style_label, ctx.track_role)
+        # Empirically learned top-K chord shapes (style-specific; merged
+        # ensemble for unknown/unmatched styles) drive the shape-reward and
+        # open/high-mix penalty terms in chord scoring.
+        chord_shapes = self._engine.get_fingering_chord_shapes(
+            ctx.style_label, ctx.track_role
+        )
 
         # Hand-position continuity is tracked *per stream* so that a low riff
         # does not pull the lead melody's hand away from its phrase position.
@@ -454,7 +512,8 @@ class FingeringStage:
             groups = _group_by_onset(stream_notes)
             for group in groups:
                 chord_result = _select_chord_fingering(
-                    group, priors, instrument_tuning, max_fret, prev_fingered
+                    group, priors, instrument_tuning, max_fret, prev_fingered,
+                    chord_shapes,
                 )
                 if chord_result is not None:
                     # Chord group was fingered as a unit

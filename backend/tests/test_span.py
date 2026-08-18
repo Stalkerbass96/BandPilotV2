@@ -122,13 +122,14 @@ class TestIsPowerChord:
 
 
 class TestScoreChordCombo:
-    def _score(self, positions, priors=None, individual=None) -> float:
+    def _score(self, positions, priors=None, individual=None, chord_shapes=None) -> float:
         return _score_chord_combo(
             positions,
             priors or {},
             notes=[],
             prev_fingered=None,
             individual_scores=individual if individual is not None else [0.0] * len(positions),
+            chord_shapes=chord_shapes,
         )
 
     def test_adjacent_strings_rewarded(self) -> None:
@@ -175,3 +176,47 @@ class TestScoreChordCombo:
         # 1.5 - 0.15 (adjacent) - 0.2 (span reward at fret=2) = 1.15
         score = self._score(positions, individual=[1.5])
         assert score == pytest.approx(1.15)
+
+    def test_learned_shape_rewarded_and_open_mix_exempted(self) -> None:
+        """An empirically learned shape gets a reward; the open/high-mix
+        penalty is waived because this exact shape is a known-good voicing."""
+        positions = [_pos(5, 0, 45), _pos(6, 10, 50)]  # s5f0,s6f10
+        base = self._score(positions)  # no KB → open-mix penalty applies
+        learned = self._score(
+            positions,
+            chord_shapes={"s5f0,s6f10": 100, "s4f0,s5f0": 200},
+        )
+        # Difference = +0.3 penalty (base) − (−0.1 − 0.2·100/200) reward (learned)
+        assert learned < base
+        assert base - learned == pytest.approx(0.3 + 0.2)
+
+    def test_learned_shape_reward_scales_with_frequency(self) -> None:
+        """More frequent shapes in the corpus get a stronger reward."""
+        positions = [_pos(5, 0, 45), _pos(6, 10, 50)]
+        low = self._score(
+            positions,
+            chord_shapes={"s5f0,s6f10": 10, "s4f0,s5f0": 100},
+        )
+        high = self._score(
+            positions,
+            chord_shapes={"s5f0,s6f10": 100, "s4f0,s5f0": 100},
+        )
+        # Reward delta: (0.1 + 0.2·1.0) − (0.1 + 0.2·0.1) = 0.18
+        assert low - high == pytest.approx(0.18)
+
+    def test_unmatched_open_high_mix_still_penalized(self) -> None:
+        """A cross-string open+high mix whose shape was *not* learned stays
+        penalized even when other learned shapes are present."""
+        positions = [_pos(5, 0, 45), _pos(6, 10, 50)]
+        no_kb = self._score(positions)
+        with_kb = self._score(positions, chord_shapes={"s4f0,s5f0": 100})
+        assert with_kb == no_kb  # penalty identical, no reward for this key
+
+    def test_open_position_chord_not_penalized(self) -> None:
+        """All-open or low-position chords (max fret < 5) never hit the
+        open/high-mix penalty."""
+        open_pos = [_pos(4, 0, 50), _pos(5, 0, 45)]
+        low_pos = [_pos(3, 2, 57), _pos(4, 0, 50)]
+        for positions in (open_pos, low_pos):
+            assert max(p.fret for p in positions) < 5
+            assert self._score(positions) <= 0.0  # only bonuses, no penalty

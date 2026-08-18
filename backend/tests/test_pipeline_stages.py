@@ -400,3 +400,52 @@ class TestFullPipeline:
         pipeline.execute(ctx)
         for stage in ("quantize", "measure_split", "tie", "voice", "fingering", "articulation", "assemble"):
             assert ctx.stage_progress.get(stage) is True, f"Stage {stage} not marked complete"
+
+
+class TestGetFingeringChordShapes:
+    """KB2 learned chord shapes must reach the fingering scorer.
+
+    Style-specific entries return their own top-K shapes; unknown/unmatched
+    styles (and styles whose entry has no chord_shapes, e.g. undersampled
+    metal) fall back to the merged ensemble so the learned knowledge still
+    steers fingering instead of degrading to pure defaults.
+    """
+
+    def test_rock_returns_style_specific_shapes(self, engine: KnowledgeEngine) -> None:
+        shapes = engine.get_fingering_chord_shapes("rock", "lead")
+        assert shapes
+        # Values are empirical occurrence counts (positive ints), keys are
+        # canonical shape strings sorted by string.
+        assert all(int(v) > 0 for v in shapes.values())
+        assert all(
+            k and all(part.startswith("s") and "f" in part for part in k.split(","))
+            for k in shapes
+        )
+
+    def test_unknown_falls_back_to_merged_ensemble(self, engine: KnowledgeEngine) -> None:
+        unknown = engine.get_fingering_chord_shapes("unknown")
+        rock = engine.get_fingering_chord_shapes("rock", "lead")
+        assert unknown  # never empty — the KB is always consulted
+        # The ensemble is a superset of the dominant (rock) style's shapes.
+        for key in list(rock)[:3]:
+            assert key in unknown
+
+    def test_metal_entry_without_shapes_uses_ensemble(
+        self, engine: KnowledgeEngine
+    ) -> None:
+        # metal's entry carries no chord_shapes (undersampled) → merged fallback.
+        shapes = engine.get_fingering_chord_shapes("metal")
+        assert shapes
+        rock = engine.get_fingering_chord_shapes("rock", "lead")
+        assert any(k in shapes for k in list(rock)[:3])
+
+    def test_empty_registry_returns_empty(self) -> None:
+        from fretpilot.knowledge.engine import KnowledgeEngine
+
+        registry = type(
+            "EmptyRegistry",
+            (),
+            {"query": lambda self, **kw: [], "query_payload": lambda self, **kw: {}},
+        )()
+        eng = KnowledgeEngine(registry)  # type: ignore[arg-type]
+        assert eng.get_fingering_chord_shapes("rock") == {}
