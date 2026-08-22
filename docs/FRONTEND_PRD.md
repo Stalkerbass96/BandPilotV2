@@ -1,5 +1,9 @@
 # FretPilot v2 前端重设计 PRD
 
+> ⚠️ **已过时**：本文档写于"7-stage / 单轨 / 亮色 indigo"阶段。
+> 后端已升级为 **8 阶段 pipeline + 声部分离双轨输出**，前端设计方向也调整为 **Dark-first**。
+> 历史演进：v2（[`FRONTEND_REDESIGN_PRD_v2.md`](./FRONTEND_REDESIGN_PRD_v2.md)）→ **v3（最新）**：[`FRONTEND_REDESIGN_PRD_v3.md`](./FRONTEND_REDESIGN_PRD_v3.md)。
+
 ## 项目信息
 
 | 字段 | 值 |

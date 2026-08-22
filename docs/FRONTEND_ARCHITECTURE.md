@@ -231,6 +231,8 @@ const isPending = !isDone && !isActive;
 
 #### 3.1 类图
 
+> 完整 Mermaid 源文件见 [`docs/class-diagram.mermaid`](./class-diagram.mermaid)；下方为内嵌副本。
+
 ```mermaid
 classDiagram
   %% ─── 设计令牌系统 ───
@@ -574,6 +576,8 @@ export function AnimatedRoutes(): JSX.Element;
 ### 4. 程序调用流程
 
 #### 4.1 修复 → 自动 GP5 导出 → alphaTab 渲染（核心流程）
+
+> 完整 Mermaid 源文件见 [`docs/sequence-diagram.mermaid`](./sequence-diagram.mermaid)；下方为内嵌副本。
 
 ```mermaid
 sequenceDiagram
