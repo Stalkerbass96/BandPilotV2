@@ -2,9 +2,7 @@ import type { Config } from "tailwindcss";
 import { palette } from "./src/styles/tokens";
 
 /**
- * Tailwind config driven by the design-token single source of truth.
- * Every color utility below resolves to a token value, so changing a token
- * in `src/styles/tokens.ts` automatically updates Tailwind classes app-wide.
+ * Tailwind config driven by the design-token single source of truth (dark-first).
  */
 const config: Config = {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
@@ -29,6 +27,10 @@ const config: Config = {
           hover: palette.brandHover,
           accent: palette.brandAccent,
         },
+
+        // ── Stream colors ──
+        lead: palette.leadColor,
+        rhythm: palette.rhythmColor,
 
         // ── Semantic ──
         success: palette.success,

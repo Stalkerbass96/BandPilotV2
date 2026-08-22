@@ -1,0 +1,137 @@
+{
+  "snapshot_version": "2026.08.18-123416",
+  "schema_version": "1",
+  "status": "approved",
+  "entries": [
+    {
+      "knowledge_id": "drum_kb2-metal-sticking",
+      "domain": "drum_kb2_sticking",
+      "kind": "sticking_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "right_hand_bias": 1.4,
+        "double_stroke_rate": 0.2,
+        "flam_rate": 0.1,
+        "hand_switch_pattern": "RLRL",
+        "single_stroke_speed": 1.5
+      },
+      "scope": {
+        "style": [
+          "metal"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-sticking"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "drum_kb2-rock-sticking",
+      "domain": "drum_kb2_sticking",
+      "kind": "sticking_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "right_hand_bias": 1.2,
+        "double_stroke_rate": 0.3,
+        "flam_rate": 0.15,
+        "hand_switch_pattern": "RLRL",
+        "single_stroke_speed": 1.0
+      },
+      "scope": {
+        "style": [
+          "rock"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-sticking"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "drum_kb2-pop-sticking",
+      "domain": "drum_kb2_sticking",
+      "kind": "sticking_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "right_hand_bias": 1.0,
+        "double_stroke_rate": 0.1,
+        "flam_rate": 0.05,
+        "hand_switch_pattern": "RLRL",
+        "single_stroke_speed": 0.8
+      },
+      "scope": {
+        "style": [
+          "pop"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-sticking"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "drum_kb2-funk-sticking",
+      "domain": "drum_kb2_sticking",
+      "kind": "sticking_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "right_hand_bias": 1.1,
+        "double_stroke_rate": 0.4,
+        "flam_rate": 0.25,
+        "hand_switch_pattern": "RRLL",
+        "single_stroke_speed": 1.2
+      },
+      "scope": {
+        "style": [
+          "funk"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-sticking"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "drum_kb2-jazz-sticking",
+      "domain": "drum_kb2_sticking",
+      "kind": "sticking_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "right_hand_bias": 1.0,
+        "double_stroke_rate": 0.3,
+        "flam_rate": 0.2,
+        "hand_switch_pattern": "RLRL",
+        "single_stroke_speed": 1.1
+      },
+      "scope": {
+        "style": [
+          "jazz"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-sticking"
+        ]
+      }
+    }
+  ]
+}

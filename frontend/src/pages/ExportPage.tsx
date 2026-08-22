@@ -180,15 +180,17 @@ export default function ExportPage(): JSX.Element {
 
   return (
     <Box className="flex flex-col gap-6">
-      <Box>
-        <Typography
-          variant="h5"
-          fontWeight={600}
-          sx={{ color: palette.textPrimary, mb: 1 }}
-        >
+      <Box
+        className="rounded-2xl px-6 py-7"
+        sx={{
+          background: `linear-gradient(135deg, ${palette.elevated} 0%, ${palette.surface} 100%)`,
+          border: `1px solid ${palette.borderDefault}`,
+        }}
+      >
+        <Typography variant="h5" fontWeight={700} sx={{ color: palette.textPrimary, mb: 1, letterSpacing: "-0.01em" }}>
           Export
         </Typography>
-        <Typography variant="body2" sx={{ color: palette.textSecondary }}>
+        <Typography variant="body2" sx={{ color: palette.textSecondary, lineHeight: 1.6 }}>
           {project
             ? `Export repaired project "${project.title}" to your preferred format.`
             : "Loading project..."}
@@ -231,7 +233,7 @@ export default function ExportPage(): JSX.Element {
                 height: "100%",
                 "&:hover": {
                   borderColor: palette.brandPrimary,
-                  boxShadow: "0 4px 20px rgba(99, 102, 241, 0.12)",
+                  boxShadow: "0 4px 20px rgba(232, 162, 75, 0.12)",
                 },
               }}
             >
@@ -391,7 +393,7 @@ export default function ExportPage(): JSX.Element {
                     color: palette.textPrimary,
                     "&:hover": {
                       borderColor: palette.brandPrimary,
-                      backgroundColor: "rgba(99, 102, 241, 0.04)",
+                      backgroundColor: "rgba(232, 162, 75, 0.06)",
                     },
                   }}
                 >

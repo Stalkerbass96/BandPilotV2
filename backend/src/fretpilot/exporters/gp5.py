@@ -3,6 +3,8 @@
 Consumes ScoreTiming (notation timing) + IRFingering + articulations.
 Outputs a .gp5 file readable by Guitar Pro. Uses PyGuitarPro for writing.
 
+Also supports drum tracks (DrumProjectIR) via GM percussion channel 10.
+
 Helpers are kept small (≤80 lines) to avoid the god-function anti-pattern.
 """
 
@@ -15,6 +17,7 @@ from typing import Iterable
 import guitarpro as gp
 
 from fretpilot.exporters.base import ExportResult, UnsupportedGuitarIR
+from fretpilot.ir.drum_models import DrumMeasure, DrumNoteEvent, DrumTrackIR, DrumProjectIR
 from fretpilot.ir.models import GuitarMeasure, GuitarNoteEvent, GuitarProjectIR
 
 
@@ -465,4 +468,281 @@ class GP5Exporter:
         )
 
 
-__all__ = ["GP5Exporter"]
+__all__ = ["GP5Exporter", "export_bandpilot"]
+
+
+# ─── Drum track support ───
+
+# Drum piece → GM MIDI pitch (for GP5 percussion track on channel 10).
+_DRUM_PIECE_TO_PITCH: dict[str, int] = {
+    "kick": 36,
+    "snare": 38,
+    "hihat_closed": 42,
+    "hihat_pedal": 44,
+    "hihat_open": 46,
+    "tom_high": 50,
+    "tom_mid": 48,
+    "tom_low": 45,
+    "tom_floor": 43,
+    "crash": 49,
+    "crash_2": 57,
+    "ride": 51,
+    "ride_bell": 53,
+    "ride_2": 59,
+    "china": 52,
+    "splash": 55,
+}
+
+
+def _configure_drum_track(gp_track: gp.Track, ir_track: DrumTrackIR, number: int) -> None:
+    """Configure a GP track as a percussion/drum track."""
+    gp_track.number = number
+    gp_track.name = ir_track.name[:40] or "Drums"
+    # Percussion track: 6-line staff representing drum pieces
+    gp_track.isPercussionTrack = True
+    gp_track.strings = [
+        gp.GuitarString(number=i + 1, value=0)
+        for i in range(6)
+    ]
+
+
+def _populate_drum_voice(
+    ir_measure: DrumMeasure,
+    gp_measure: gp.Measure,
+) -> tuple[int, list[str]]:
+    """Populate a drum measure's voice with beats and notes.
+
+    Drum notes use GM percussion pitches on channel 10. Each note is placed
+    on string 1 with the MIDI pitch as the note value (PyGuitarPro convention
+    for percussion tracks).
+    """
+    warnings: list[str] = []
+    voice = gp_measure.voices[0]
+    voice.beats.clear()
+
+    # Group events by onset beat.
+    grouped: dict[float, list[DrumNoteEvent]] = {}
+    for event in ir_measure.events:
+        grouped.setdefault(event.score.start_beat, []).append(event)
+    grouped_list = sorted(grouped.items(), key=lambda item: item[0])
+
+    cursor = gp_measure.start
+    note_count = 0
+
+    for absolute_start_beat, events in grouped_list:
+        start_tick = gp_measure.start + _beats_to_ticks(
+            absolute_start_beat - ir_measure.start_beat
+        )
+        if start_tick > cursor:
+            voice.beats.extend(_make_rest_beats(voice, cursor, start_tick - cursor))
+            cursor = start_tick
+
+        # Duration = shortest event in this beat group.
+        durations = [
+            _beats_to_ticks(e.score.duration_beats) for e in events
+        ]
+        short_ticks = min(durations) if durations else gp.Duration.quarterTime
+
+        for seg_idx, duration in enumerate(_split_duration_ticks(short_ticks)):
+            beat = gp.Beat(
+                voice,
+                duration=duration,
+                start=cursor,
+                status=gp.BeatStatus.normal,
+            )
+            voice.beats.append(beat)
+            for event in events:
+                pitch = _DRUM_PIECE_TO_PITCH.get(
+                    event.piece, event.pitch
+                )
+                note = gp.Note(
+                    beat,
+                    value=pitch,
+                    velocity=max(
+                        1, min(127, event.performance.velocity)
+                    ),
+                    string=1,
+                    type=gp.NoteType.normal,
+                )
+                # Apply technique as effect
+                tech = event.location.technique
+                if tech == "ghost":
+                    note.effect.ghostNote = True
+                elif tech == "accent":
+                    note.effect.accentuatedNote = True
+                elif tech == "flam":
+                    note.effect.graceType = gp.GraceType.simple
+                beat.notes.append(note)
+                note_count += 1
+            cursor += duration.time
+
+    if cursor < gp_measure.end:
+        voice.beats.extend(_make_rest_beats(voice, cursor, gp_measure.end - cursor))
+
+    return note_count, warnings
+
+
+def _fill_rest_measure(gp_measure: gp.Measure) -> None:
+    """Fill a GP measure's voice 1 with a full-measure rest.
+
+    BandPilot guitar and drum IRs are produced by independent pipelines and
+    may span different numbers of measures (e.g. a 4-measure drum groove vs
+    a 2-measure guitar riff). The .gp5 requires one shared measure count, so
+    the shorter track's trailing measures are written as empty (rest-only).
+    """
+    voice = gp_measure.voices[0]
+    voice.beats.clear()
+    voice.beats.extend(
+        _make_rest_beats(voice, gp_measure.start, gp_measure.end - gp_measure.start)
+    )
+
+
+def _measure_by_number(
+    measures: list, gp_measure: gp.Measure
+) -> object | None:
+    """Return the IR measure matching a GP measure's number, or ``None``.
+
+    IR measures are numbered from 1 contiguously; GP measures inherit the
+    header numbers set in ``export_bandpilot``. When an IR is shorter than
+    the shared measure count, later GP measures have no IR counterpart.
+    """
+    number = gp_measure.number
+    if not measures or number < 1 or number > len(measures):
+        return None
+    return measures[number - 1]
+
+
+def export_bandpilot(
+    guitar_ir: GuitarProjectIR | None,
+    drum_ir: DrumProjectIR | None,
+    output_path: Path | str,
+) -> ExportResult:
+    """Export guitar + drum IRs as a single multi-track .gp5 file.
+
+    Args:
+        guitar_ir: Guitar project IR (may be None for drum-only projects).
+        drum_ir: Drum project IR (may be None for guitar-only projects).
+        output_path: Destination .gp5 file path.
+
+    Returns:
+        ExportResult with combined note count and warnings.
+
+    The guitar and drum IRs come from independent pipelines and may span
+    different numbers of measures; the track with fewer measures has its
+    trailing measures written as rests so all tracks share one measure count.
+    """
+    if guitar_ir is None and drum_ir is None:
+        raise UnsupportedGuitarIR("At least one IR (guitar or drum) is required.")
+
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    # Use guitar IR as the base if available, otherwise create from drum IR.
+    base_ir = guitar_ir if guitar_ir is not None else drum_ir
+    song = gp.Song()
+    song.title = base_ir.title
+    if base_ir.tempo_map:
+        song.tempo = max(1, int(round(base_ir.tempo_map[0].bpm)))
+    song.tempoName = "BandPilot"
+
+    guitar_tracks = guitar_ir.tracks if guitar_ir else []
+    drum_tracks = drum_ir.tracks if drum_ir else []
+
+    # Shared measure count = the longest IR (per family, first track).
+    measure_count = 0
+    for tracks in (guitar_tracks, drum_tracks):
+        if tracks and tracks[0].measures:
+            measure_count = max(measure_count, len(tracks[0].measures))
+    if measure_count == 0:
+        raise UnsupportedGuitarIR("No measures found in any IR.")
+
+    while len(song.measureHeaders) < measure_count:
+        song.newMeasure()
+    if len(song.measureHeaders) > measure_count:
+        song.measureHeaders = song.measureHeaders[:measure_count]
+        for track in song.tracks:
+            track.measures = track.measures[:measure_count]
+
+    # Time signatures come from the longer IR so late time-signature changes
+    # (e.g. in a longer drum part) are reflected; shorter tracks repeat the
+    # last known signature in their padded tail.
+    ts_source: list = []
+    for tracks in (guitar_tracks, drum_tracks):
+        if tracks and tracks[0].measures and len(tracks[0].measures) > len(ts_source):
+            ts_source = tracks[0].measures
+    start = gp.Duration.quarterTime
+    last_number = 0
+    last_numerator, last_denominator = 4, 4
+    for idx, header in enumerate(song.measureHeaders):
+        if idx < len(ts_source):
+            ir_measure = ts_source[idx]
+            last_number = ir_measure.number
+            last_numerator = ir_measure.numerator
+            last_denominator = ir_measure.denominator
+        else:
+            last_number += 1
+        header.number = last_number
+        header.start = start
+        header.timeSignature = gp.TimeSignature(
+            numerator=last_numerator,
+            denominator=gp.Duration(value=last_denominator),
+        )
+        start = header.end
+
+    warnings: list[str] = []
+    total_note_count = 0
+    track_number = 1
+
+    # ── Guitar tracks ──
+    for ir_track in guitar_tracks:
+        if track_number == 1:
+            gp_track = song.tracks[0]
+        else:
+            gp_track = gp.Track(song, number=track_number)
+            song.tracks.append(gp_track)
+        _configure_track(gp_track, ir_track, track_number)
+
+        note_lookup: dict[str, gp.Note] = {}
+        for gp_measure in gp_track.measures:
+            ir_measure = _measure_by_number(ir_track.measures, gp_measure)
+            if ir_measure is None:
+                _fill_rest_measure(gp_measure)
+                continue
+            for voice_number in (1, 2):
+                exported, voice_warnings = _populate_voice(
+                    ir_measure, gp_measure, voice_number, note_lookup
+                )
+                total_note_count += exported
+                warnings.extend(voice_warnings)
+
+        all_events = [e for m in ir_track.measures for e in m.events]
+        _apply_linked_effects(all_events, note_lookup, warnings)
+        track_number += 1
+
+    # ── Drum tracks ──
+    for ir_track in drum_tracks:
+        if track_number == 1:
+            gp_track = song.tracks[0]
+        else:
+            gp_track = gp.Track(song, number=track_number)
+            song.tracks.append(gp_track)
+        _configure_drum_track(gp_track, ir_track, track_number)
+
+        for gp_measure in gp_track.measures:
+            ir_measure = _measure_by_number(ir_track.measures, gp_measure)
+            if ir_measure is None:
+                _fill_rest_measure(gp_measure)
+                continue
+            exported, drum_warnings = _populate_drum_voice(ir_measure, gp_measure)
+            total_note_count += exported
+            warnings.extend(drum_warnings)
+        track_number += 1
+
+    gp.write(song, destination, version=(5, 1, 0))
+    return ExportResult(
+        format_id="gp5",
+        path=str(destination),
+        measure_count=measure_count,
+        note_count=total_note_count,
+        warnings=warnings,
+    )

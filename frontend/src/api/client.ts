@@ -8,6 +8,7 @@ import type {
   ByokConfig,
   ByokResponse,
   ByokTestResponse,
+  DrumLearnResponse,
   ExportRecord,
   ExportResponse,
   LearnResponse,
@@ -15,6 +16,7 @@ import type {
   ProjectItem,
   RepairReport,
   RepairResponse,
+  TrackSummaryItem,
   TuningInfo,
   VersionDiff,
   VersionsResponse,
@@ -143,6 +145,19 @@ export const projectsApi = {
   },
 };
 
+// ─── Tracks API (BandPilot multi-instrument) ───
+
+export const tracksApi = {
+  /**
+   * List detected tracks with instrument family info for a project.
+   * GET /api/projects/{id}/tracks
+   */
+  async list(projectId: number): Promise<{ tracks: TrackSummaryItem[] }> {
+    const res = await http.get(`/projects/${projectId}/tracks`);
+    return unwrap(res.data) as { tracks: TrackSummaryItem[] };
+  },
+};
+
 // ─── Tunings API ───
 
 export const tuningsApi = {
@@ -238,6 +253,27 @@ export const elearningApi = {
       timeout: 600_000,
     });
     return unwrap(res.data) as LearnResponse;
+  },
+
+  /**
+   * Run the drum learning loop (StickPilot): parse percussion tracks from
+   * GP tabs, extract sticking statistics and derive empirical sticking
+   * priors into drum_kb2_sticking.json.
+   */
+  async learnDrum(
+    files: File[],
+    style?: string,
+    promote = true,
+  ): Promise<DrumLearnResponse> {
+    const form = new FormData();
+    for (const f of files) form.append("files", f);
+    if (style) form.append("style", style);
+    form.append("promote", String(promote));
+    const res = await http.post("/elearning/learn/drum", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 600_000,
+    });
+    return unwrap(res.data) as DrumLearnResponse;
   },
 
   async versions(): Promise<VersionsResponse> {

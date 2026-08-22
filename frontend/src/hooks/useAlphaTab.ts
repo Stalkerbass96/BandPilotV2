@@ -85,11 +85,17 @@ export function useAlphaTab(scoreData: ArrayBuffer | null): UseAlphaTabResult {
           core: {
             fontDirectory: "/font/",
             engine: "svg",
-            // alphaTab defaults to rendering in a Web Worker, but worker-script
-            // auto-detection is unreliable under Vite (both dev and build) and
-            // the render silently produces nothing.  Render synchronously on
-            // the main thread instead — the scores here are small.
             useWorkers: false,
+          },
+          display: {
+            // Dark-first theme — match FretPilot's「录音棚」aesthetic
+            resources: {
+              css: ".at-track{background:#161A20;color:#F0F2F5;}"
+                + ".at-track-title{color:#E8A24B;}"
+                + ".at-bar{color:#9DA5B4;}"
+                + ".at-note{color:#F0F2F5;}"
+                + ".at-staff{color:#6B7280;}",
+            },
           },
           player: {
             enable: false,
@@ -98,10 +104,11 @@ export function useAlphaTab(scoreData: ArrayBuffer | null): UseAlphaTabResult {
 
         const api = new mod.AlphaTabApi(container, settings);
         apiRef.current = api;
-        // `load()` parses the score and triggers rendering automatically (its
-        // callback calls renderScore internally), so no explicit render() call
-        // is needed.  Omit trackIndexes to render the first track, which is
-        // what FretPilot produces (a single guitar track).
+        // `load()` parses the score and triggers rendering automatically.
+        // Omitting trackIndexes renders **all tracks** in the score —
+        // FretPilot may produce a single guitar track or, after stream
+        // separation, a [Lead, Rhythm] dual-track GP5. Both cases are
+        // handled correctly here.
         const ok = api.load(scoreData);
         // eslint-disable-next-line no-console
         console.log(

@@ -1,8 +1,8 @@
 /**
- * PipelineProgress — visual progress indicator for the 7-stage repair pipeline.
+ * PipelineProgress — visual progress indicator for the 8-stage repair pipeline.
  *
  * Bug fix: the old `isDone` check used `idx < PIPELINE_STAGES.length` which is
- * always true (idx ranges 0-6, length is 7), causing every stage to appear
+ * always true (idx ranges 0-7, length is 8), causing every stage to appear
  * done as soon as the pipeline activated. The new logic uses a three-state
  * model driven by `currentStageIndex`:
  *   - done   : idx < currentStageIndex  (already passed this stage)
@@ -21,6 +21,7 @@ const PIPELINE_STAGES = [
   { name: "measure_split", label: "Measure Split" },
   { name: "tie", label: "Tie / Legato" },
   { name: "voice", label: "Voice" },
+  { name: "separation", label: "Separation" },
   { name: "fingering", label: "Fingering" },
   { name: "articulation", label: "Articulation" },
   { name: "assemble", label: "Assemble IR" },
@@ -31,7 +32,7 @@ interface PipelineProgressProps {
   active: boolean;
   /** Whether the pipeline has completed (overrides active). */
   completed: boolean;
-  /** Index (0-6) of the currently-active stage. */
+  /** Index (0-7) of the currently-active stage. */
   currentStageIndex: number;
 }
 
@@ -65,7 +66,7 @@ export default function PipelineProgress({
             : isActive
               ? palette.brandPrimary
               : "transparent";
-          const fgColor = isDone || isActive ? "#FFFFFF" : palette.textTertiary;
+          const fgColor = isDone ? "#0E1116" : isActive ? "#1A1208" : palette.textTertiary;
           const borderColor = isDone
             ? palette.success
             : isActive
@@ -91,7 +92,7 @@ export default function PipelineProgress({
               >
                 {isDone ? (
                   <CheckCircleIcon
-                    sx={{ fontSize: 16, color: "#FFFFFF" }}
+                    sx={{ fontSize: 16, color: "#0E1116" }}
                   />
                 ) : (
                   <RadioButtonUncheckedIcon

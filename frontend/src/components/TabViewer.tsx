@@ -58,13 +58,13 @@ export default function TabViewer({ scoreData }: TabViewerProps): JSX.Element {
         ref={containerRef}
         className="w-full overflow-x-auto"
         sx={{
-          minHeight: 120,
+          minHeight: 240,
           "& svg": { maxWidth: "100%" },
         }}
       />
 
       {isLoading && (
-        <Box className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-white/70">
+        <Box className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-canvas/80">
           <Skeleton
             variant="rectangular"
             width="100%"
@@ -78,7 +78,7 @@ export default function TabViewer({ scoreData }: TabViewerProps): JSX.Element {
       )}
 
       {!isLoading && error && (
-        <Box className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-white/70">
+        <Box className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-canvas/80">
           <Typography
             variant="body2"
             sx={{ color: palette.error, fontWeight: 500 }}

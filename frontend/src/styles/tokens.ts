@@ -1,73 +1,72 @@
 /**
- * FretPilot v2 Design Tokens — the single source of truth for all colors.
+ * FretPilot v2 Design Tokens — Dark-first「录音棚」美学 v3.
  *
- * Both the Tailwind config and the MUI theme import these tokens, so a change
- * here propagates to every utility class and component in the app.
- *
- * Only `light` is fully populated today; `dark` is reserved for future use.
+ * 层次：canvas (sidebar) < surface (main) < elevated (card) < subtle (hover)
+ * 品牌：琥珀/铜色 #E8A24B（琴弦金属 + 音孔玫瑰木）
+ * 声部：Lead = 冷青 / Rhythm = 琥珀
  */
 
 export const tokens = {
-  light: {
-    // ── Background layers (4) ──
-    canvas: "#FFFFFF",
-    surface: "#F9FAFB",
-    elevated: "#FFFFFF",
-    subtle: "#F3F4F6",
-
-    // ── Text layers (3) ──
-    textPrimary: "#111827",
-    textSecondary: "#6B7280",
-    textTertiary: "#9CA3AF",
-
-    // ── Brand colors (3) ──
-    brandPrimary: "#6366F1",
-    brandHover: "#4F46E5",
-    brandAccent: "#8B5CF6",
-
-    // ── Semantic colors (4) ──
-    success: "#10B981",
-    warning: "#F59E0B",
-    error: "#EF4444",
-    info: "#3B82F6",
-
-    // ── Border states (3) ──
-    borderDefault: "#E5E7EB",
-    borderHover: "#D1D5DB",
-    borderActive: "#6366F1",
-  },
-
   dark: {
-    // ── Background layers (4) — reserved ──
-    canvas: "#0F172A",
-    surface: "#1E293B",
-    elevated: "#334155",
-    subtle: "#1E293B",
+    canvas: "#0B0E13",
+    surface: "#11161E",
+    elevated: "#1A2029",
+    subtle: "#222B36",
 
-    // ── Text layers (3) ──
-    textPrimary: "#F1F5F9",
-    textSecondary: "#94A3B8",
-    textTertiary: "#64748B",
+    textPrimary: "#F0F2F5",
+    textSecondary: "#9DA5B4",
+    textTertiary: "#6B7280",
 
-    // ── Brand colors (3) ──
-    brandPrimary: "#818CF8",
-    brandHover: "#6366F1",
-    brandAccent: "#A78BFA",
+    brandPrimary: "#E8A24B",
+    brandHover: "#D4882E",
+    brandAccent: "#C97A35",
 
-    // ── Semantic colors (4) ──
+    leadColor: "#4FD1C5",
+    rhythmColor: "#E8A24B",
+
     success: "#34D399",
     warning: "#FBBF24",
     error: "#F87171",
     info: "#60A5FA",
 
-    // ── Border states (3) ──
-    borderDefault: "#334155",
-    borderHover: "#475569",
-    borderActive: "#818CF8",
+    borderDefault: "#2D3239",
+    borderHover: "#3D4451",
+    borderActive: "#E8A24B",
+  },
+
+  light: {
+    canvas: "#FFFFFF",
+    surface: "#F9FAFB",
+    elevated: "#FFFFFF",
+    subtle: "#F3F4F6",
+
+    textPrimary: "#111827",
+    textSecondary: "#6B7280",
+    textTertiary: "#9CA3AF",
+
+    brandPrimary: "#D4882E",
+    brandHover: "#B36F1E",
+    brandAccent: "#C97A35",
+
+    leadColor: "#0D9488",
+    rhythmColor: "#D4882E",
+
+    success: "#10B981",
+    warning: "#F59E0B",
+    error: "#EF4444",
+    info: "#3B82F6",
+
+    borderDefault: "#E5E7EB",
+    borderHover: "#D1D5DB",
+    borderActive: "#D4882E",
   },
 } as const;
 
-/** The active palette (light mode). */
-export const palette = tokens.light;
+export const palette = tokens.dark;
+
+export const streamColors = {
+  lead: palette.leadColor,
+  rhythm: palette.rhythmColor,
+} as const;
 
 export type Palette = typeof palette;

@@ -82,6 +82,16 @@ export function AnimatedRoutes(): JSX.Element {
           }
         />
         <Route
+          path="/settings"
+          element={
+            <ProtectedRoute>
+              <PageWrapper>
+                <ByokPage />
+              </PageWrapper>
+            </ProtectedRoute>
+          }
+        />
+        <Route
           path="/learning"
           element={
             <ProtectedRoute>

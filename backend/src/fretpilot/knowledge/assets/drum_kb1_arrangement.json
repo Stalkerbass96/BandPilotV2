@@ -1,0 +1,142 @@
+{
+  "snapshot_version": "2026.08.18-123416",
+  "schema_version": "1",
+  "status": "approved",
+  "entries": [
+    {
+      "knowledge_id": "drum_kb1-metal-arrangement",
+      "domain": "drum_kb1_arrangement",
+      "kind": "drum_arrangement_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "beat_density": 3.5,
+        "kick_pattern_bias": 1.5,
+        "snare_backbeat_bias": 1.0,
+        "hihat_subdivision": 16,
+        "fill_frequency": 0.8,
+        "ghost_note_rate": 0.3
+      },
+      "scope": {
+        "style": [
+          "metal"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-drum-arrangement"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "drum_kb1-rock-arrangement",
+      "domain": "drum_kb1_arrangement",
+      "kind": "drum_arrangement_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "beat_density": 2.0,
+        "kick_pattern_bias": 1.2,
+        "snare_backbeat_bias": 1.3,
+        "hihat_subdivision": 8,
+        "fill_frequency": 0.5,
+        "ghost_note_rate": 0.1
+      },
+      "scope": {
+        "style": [
+          "rock"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-drum-arrangement"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "drum_kb1-pop-arrangement",
+      "domain": "drum_kb1_arrangement",
+      "kind": "drum_arrangement_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "beat_density": 1.5,
+        "kick_pattern_bias": 1.0,
+        "snare_backbeat_bias": 1.2,
+        "hihat_subdivision": 8,
+        "fill_frequency": 0.3,
+        "ghost_note_rate": 0.05
+      },
+      "scope": {
+        "style": [
+          "pop"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-drum-arrangement"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "drum_kb1-funk-arrangement",
+      "domain": "drum_kb1_arrangement",
+      "kind": "drum_arrangement_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "beat_density": 3.0,
+        "kick_pattern_bias": 0.8,
+        "snare_backbeat_bias": 0.9,
+        "hihat_subdivision": 16,
+        "fill_frequency": 0.6,
+        "ghost_note_rate": 0.4
+      },
+      "scope": {
+        "style": [
+          "funk"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-drum-arrangement"
+        ]
+      }
+    },
+    {
+      "knowledge_id": "drum_kb1-jazz-arrangement",
+      "domain": "drum_kb1_arrangement",
+      "kind": "drum_arrangement_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "beat_density": 2.5,
+        "kick_pattern_bias": 0.5,
+        "snare_backbeat_bias": 0.3,
+        "hihat_subdivision": 8,
+        "fill_frequency": 0.7,
+        "ghost_note_rate": 0.2
+      },
+      "scope": {
+        "style": [
+          "jazz"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-drum-arrangement"
+        ]
+      }
+    }
+  ]
+}

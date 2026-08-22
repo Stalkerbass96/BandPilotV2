@@ -69,6 +69,9 @@ class Project(Base):
     style_label: Mapped[str] = mapped_column(String(64), default="unknown", nullable=False)
     degraded_mode: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     midi_fidelity: Mapped[float] = mapped_column(Float, default=0.5, nullable=False)
+    instrument_family: Mapped[str] = mapped_column(
+        String(32), default="guitar", nullable=False
+    )
     track_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

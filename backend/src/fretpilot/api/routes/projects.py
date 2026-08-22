@@ -29,11 +29,14 @@ from fretpilot.db.session import get_db
 from fretpilot.detection import classify_timeline, resolve_streams
 from fretpilot.engine.cleanup import auto_detect_tuning, cleanup_streams
 from fretpilot.engine.pipeline import create_pipeline
+from fretpilot.engine.drum_pipeline import create_drum_pipeline
 from fretpilot.engine.context import PipelineContext, NoteRewriteDecision
+from fretpilot.ir.drum_models import DrumProjectIR
 from fretpilot.knowledge.tunings import GuitarTuning, TuningRegistry
 from fretpilot.ir.serde import ir_to_dict, load_ir, save_ir
 from fretpilot.midi.models import NormalizedTimeline, NormalizedTrack
 from fretpilot.midi.parser import load_midi
+from fretpilot.orchestrator import BandPilotOrchestrator, classify_track_family
 
 logger = logging.getLogger("fretpilot.api.projects")
 router = APIRouter()
@@ -106,6 +109,9 @@ class RepairResponse(BaseModel):
     cleanup: CleanupInfo | None = None
     rewrite: RewriteInfo | None = None
     separation: SeparationInfo | None = None
+    # BandPilot multi-track fields (optional — absent for guitar-only backward compat).
+    tracks_repaired: list[dict[str, Any]] | None = None
+    has_drums: bool = False
 
 
 def _project_path(user: User, project_id: int) -> Path:
@@ -132,6 +138,29 @@ def _build_advisor(user: User, db: Session) -> ShadowRewriteAdvisor:
     return ShadowRewriteAdvisor(provider)
 
 
+def _non_drum_streams(timeline: NormalizedTimeline) -> list:
+    """Resolve logical streams, excluding percussion/drum streams.
+
+    在 BandPilot 混合 MIDI（吉他 + 鼓）里，鼓轨常常承载最多音符（kick/
+    snare/hat 律动）。吉他 cleanup 绝不能把鼓流选成"主吉他流"，否则吉他 IR
+    会用鼓的音高、冠以鼓轨的名字（曾导致导出的 .gp5 两条轨都叫 "Drums"）。
+    鼓轨由 BandPilot orchestrator 路由到 StickPilot 处理。
+    """
+    drum_indices = {
+        t.index
+        for t in timeline.tracks
+        if t.notes and classify_track_family(t).is_drum
+    }
+    if not drum_indices:
+        return resolve_streams(timeline)
+    return [
+        s
+        for s in resolve_streams(timeline)
+        if not s.source_track_indices
+        or not any(i in drum_indices for i in s.source_track_indices)
+    ]
+
+
 def _build_cleaned_track(
     timeline: NormalizedTimeline,
     primary_track_index: int | None,
@@ -145,8 +174,11 @@ def _build_cleaned_track(
     ``tuning`` 为 None 时走 auto_detect；否则使用用户传入的定弦（覆盖）。
     当无流可清理时回退到 ``fallback`` 并返回 ``None`` 摘要。返回
     ``(cleaned_track, cleanup_info)``。
+
+    混合 MIDI（吉他 + 鼓）下先经 :func:`_non_drum_streams` 排除鼓流，
+    确保主吉他流永远来自吉他/旋律轨。
     """
-    streams = resolve_streams(timeline)
+    streams = _non_drum_streams(timeline)
     # auto-detect + user override：显式传入定弦时覆盖自动检测结果。
     if tuning is None:
         tuning = auto_detect_tuning(streams) if streams else None
@@ -199,6 +231,33 @@ def _resolve_tuning(tuning_id: str | None) -> GuitarTuning | None:
     if tuning is None:
         raise HTTPException(400, f"Unknown tuning_id: {tuning_id}")
     return tuning
+
+
+def _combine_drum_irs(
+    drum_irs: list[DrumProjectIR], title: str
+) -> DrumProjectIR | None:
+    """Combine one or more drum IRs into a single project IR with all tracks.
+
+    The repair route produces one ``DrumProjectIR`` per drum track; the merged
+    export contract (``load_merged_irs`` / ``export_bandpilot``) consumes a
+    single drum IR. This merges them preserving tempo/time-sig/knowledge from
+    the first IR.
+    """
+    if not drum_irs:
+        return None
+    first = drum_irs[0]
+    return DrumProjectIR(
+        title=title,
+        source=first.source,
+        schema_version=first.schema_version,
+        tempo_map=list(first.tempo_map),
+        time_signatures=list(first.time_signatures),
+        tracks=[t for ir in drum_irs for t in ir.tracks],
+        knowledge=first.knowledge,
+        style_label=first.style_label,
+        changes=[c for ir in drum_irs for c in ir.changes],
+        warnings=[w for ir in drum_irs for w in ir.warnings],
+    )
 
 
 @router.get("", response_model=dict)
@@ -254,6 +313,19 @@ async def create_project(
 
     timeline = load_midi(source_path)
     report = classify_timeline(timeline)
+
+    # BandPilot: detect instrument families for all tracks.
+    has_drums_on_import = False
+    for track in timeline.tracks:
+        if not track.notes:
+            continue
+        family_cls = classify_track_family(track)
+        if family_cls.is_drum:
+            has_drums_on_import = True
+            break
+    if has_drums_on_import:
+        project.instrument_family = "mixed"
+
     project.track_summary = json.dumps(
         {
             "tracks": [
@@ -295,6 +367,48 @@ def get_project(
         "style_label": project.style_label, "degraded_mode": project.degraded_mode,
         "tracks": tracks.get("tracks", []),
     }, "message": "ok"}
+
+
+@router.get("/{project_id}/tracks", response_model=dict)
+def get_project_tracks(
+    project_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Return track list with instrument family info.
+
+    Uses the BandPilot family classifier to detect each track's instrument
+    family (guitar, drums, bass, keys, unknown) and includes drum-specific
+    metadata (kit type, detected pieces) when applicable.
+    """
+    project = _get_user_project(db, user, project_id)
+    project_dir = _project_path(user, project.id)
+    source_path = project_dir / "source.mid"
+    if not source_path.exists():
+        raise HTTPException(404, "Source MIDI file not found")
+
+    timeline = load_midi(source_path)
+    tracks_info: list[dict[str, Any]] = []
+    for track in timeline.tracks:
+        if not track.notes:
+            continue
+        cls = classify_track_family(track)
+        info: dict[str, Any] = {
+            "index": cls.track_index,
+            "name": cls.track_name,
+            "family": cls.family.value,
+            "is_guitar": cls.is_guitar,
+            "is_drum": cls.is_drum,
+            "role": cls.guitar_role,
+            "confidence": cls.confidence,
+            "note_count": cls.note_count,
+        }
+        if cls.is_drum:
+            info["kit_type"] = cls.kit_type
+            info["detected_pieces"] = cls.detected_pieces
+        tracks_info.append(info)
+
+    return {"code": 0, "data": {"tracks": tracks_info, "total": len(tracks_info)}, "message": "ok"}
 
 
 def _get_user_project(db: Session, user: User, project_id: int) -> Project:
@@ -464,21 +578,124 @@ def repair_project(
             warnings=list(ctx.separation.warnings),
         )
 
+    # ─── BandPilot: detect drum tracks and route to StickPilot ───
+    # Backward compatibility: if no drums are detected, the behavior is
+    # identical to the previous guitar-only pipeline. The merged IR wraps
+    # the single guitar IR and the response omits multi-track fields.
+    guitar_irs = [ir]
+    drum_irs: list = []
+    tracks_repaired: list[dict[str, Any]] | None = None
+    has_drums = False
+    instrument_family = "guitar"
+
+    from fretpilot.orchestrator.detector import InstrumentFamily
+
+    for track in timeline.tracks:
+        if not track.notes or track.index == cleaned_track.index:
+            continue
+        family_cls = classify_track_family(track)
+        if family_cls.family == InstrumentFamily.DRUMS:
+            has_drums = True
+            instrument_family = "mixed"
+            try:
+                drum_pipeline = create_drum_pipeline()
+                from fretpilot.engine.drum_context import DrumPipelineContext
+                drum_ctx = DrumPipelineContext(
+                    timeline=timeline,
+                    track=track,
+                    knowledge=drum_pipeline.registry,
+                    style_label=style_result.style_label,
+                    midi_fidelity=req.midi_fidelity,
+                    source_track_index=track.index,
+                )
+                drum_ir = drum_pipeline.execute(drum_ctx)
+                drum_irs.append(drum_ir)
+                drum_stages = sum(1 for v in drum_ctx.stage_progress.values() if v)
+                drum_report: dict[str, Any] = {
+                    "kit_type": drum_ir.tracks[0].kit if drum_ir.tracks else "",
+                    "style_detected": drum_ctx.detected_style,
+                    "patterns": [m.pattern for t in drum_ir.tracks for m in t.measures],
+                    "sticking_suggested": drum_stages >= 6,
+                    "velocity_normalized": drum_stages >= 5,
+                }
+                if tracks_repaired is None:
+                    tracks_repaired = []
+                tracks_repaired.append({
+                    "track_index": track.index,
+                    "module": "stickpilot",
+                    "stages_completed": drum_stages,
+                    "note_count": len(track.notes),
+                    "change_count": len(drum_ctx.transformations),
+                    "drum_report": drum_report,
+                })
+            except Exception:
+                logger.exception("BandPilot: error processing drum track %d", track.index)
+
+    # Build the guitar track report for multi-track response.
+    if has_drums and tracks_repaired is not None:
+        tracks_repaired.insert(0, {
+            "track_index": cleaned_track.index,
+            "module": "fretpilot",
+            "stages_completed": sum(1 for v in ctx.stage_progress.values() if v),
+            "note_count": len(cleaned_track.notes),
+            "change_count": len(ir.changes),
+        })
+
+    # Merge IRs (single guitar IR when no drums — backward compatible).
+    from fretpilot.orchestrator.merge import merge_irs
+    merged = merge_irs(guitar_irs, drum_irs, project.title)
+
+    # Persist IRs. When no drums, save the guitar IR via save_ir() (backward
+    # compatible with the /report endpoint which uses load_ir()). When drums
+    # are present, also save the split IR pair as ir_merged.json — the
+    # documented contract of load_merged_irs(): {"guitar": {...}|null,
+    # "drum": {...}|null}.
     save_ir(ir, project_dir / "ir.json")
+    if has_drums:
+        import json as _json
+        drum_ir_combined = _combine_drum_irs(drum_irs, project.title)
+        (project_dir / "ir_merged.json").write_text(
+            _json.dumps(
+                {
+                    "guitar": ir_to_dict(ir),
+                    "drum": (
+                        drum_ir_combined.to_dict()
+                        if drum_ir_combined is not None
+                        else None
+                    ),
+                },
+                ensure_ascii=False,
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
     project.status = "repaired"
     project.style_label = style_result.style_label
     project.degraded_mode = style_result.degraded_mode
     project.midi_fidelity = req.midi_fidelity
+    project.instrument_family = instrument_family
     db.commit()
+
+    # When no drums, the response is identical to the previous guitar-only
+    # pipeline (tracks_repaired=None, has_drums=False).
+    total_note_count = (
+        merged.get("note_count", 0)
+        if has_drums
+        else sum(len(m.events) for t in ir.tracks for m in t.measures)
+    )
+    total_changes = len(ir.changes) + sum(len(d.changes) for d in drum_irs)
 
     return {"code": 0, "data": RepairResponse(
         project_id=project.id, status="repaired",
         style_label=style_result.style_label, degraded_mode=style_result.degraded_mode,
-        note_count=sum(len(m.events) for t in ir.tracks for m in t.measures),
-        change_count=len(ir.changes),
+        note_count=total_note_count,
+        change_count=total_changes,
         cleanup=cleanup_info,
         rewrite=rewrite_info,
         separation=separation_info,
+        tracks_repaired=tracks_repaired,
+        has_drums=has_drums,
     ).model_dump(), "message": "ok"}
 
 

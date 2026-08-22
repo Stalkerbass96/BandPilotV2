@@ -35,6 +35,9 @@ dist/
 vite.config.js
 vite.config.d.ts
 
+# Vite 临时时间戳文件（运行时生成，非源码）
+*.timestamp-*.mjs
+
 # ─── IDE / 系统 ───
 .idea/
 .vscode/
@@ -43,3 +46,6 @@ vite.config.d.ts
 
 # ─── 日志 ───
 *.log
+
+# ─── WorkBuddy Agent 状态（本地工作记忆/技能，不提交）───
+.workbuddy/

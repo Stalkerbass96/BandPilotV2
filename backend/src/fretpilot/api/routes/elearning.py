@@ -22,6 +22,9 @@ from pydantic import BaseModel
 
 from fretpilot.api.deps import get_current_user
 from fretpilot.db.models import User
+from fretpilot.elearning.drum_priors_deriver import DrumPriorsDeriver
+from fretpilot.elearning.drum_reader import DrumReader
+from fretpilot.elearning.drum_stats_extractor import DrumStatsExtractor
 from fretpilot.elearning.gp_reader import GPReader
 from fretpilot.elearning.kb_writer import KBWriter
 from fretpilot.elearning.priors_deriver import PriorsDeriver
@@ -44,6 +47,55 @@ _MAX_UPLOAD_BYTES = 200 * 1024 * 1024  # 200 MB total
 
 def _kb_writer() -> KBWriter:
     return KBWriter(_KB_ROOT)
+
+
+async def _ingest_uploads(
+    files: list[UploadFile],
+    tmp_dir: Path,
+) -> tuple[list[Path], list[dict[str, str]]]:
+    """Save uploads into ``tmp_dir``, unzip archives, and collect GP files.
+
+    Args:
+        files: Uploaded GP files and/or zip archives.
+        tmp_dir: Destination directory (owned by the caller's temp context).
+
+    Returns:
+        ``(gp_paths, failed_files)`` — GP file paths plus per-file failures.
+        Raises ``HTTPException(413)`` when the total upload exceeds the cap.
+    """
+    gp_paths: list[Path] = []
+    failed_files: list[dict[str, str]] = []
+    total_bytes = 0
+
+    for upload in files:
+        total_bytes += upload.size or 0
+        if total_bytes > _MAX_UPLOAD_BYTES:
+            raise HTTPException(status_code=413, detail="Upload too large (max 200 MB)")
+
+        name = upload.filename or "unnamed"
+        dest = tmp_dir / name
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            content = await upload.read()
+            dest.write_bytes(content)
+        except OSError as exc:
+            failed_files.append({"file": name, "error": str(exc)})
+            continue
+
+        lower = name.lower()
+        if lower.endswith(".zip"):
+            try:
+                gp_paths.extend(_extract_archive(dest, tmp_dir))
+            except (zipfile.BadZipFile, OSError) as exc:
+                failed_files.append({"file": name, "error": f"bad zip: {exc}"})
+        elif lower.endswith(_SUPPORTED_EXTENSIONS):
+            gp_paths.append(dest)
+        else:
+            failed_files.append(
+                {"file": name, "error": "unsupported format (use .gp3/.gp4/.gp5/.zip)"}
+            )
+
+    return gp_paths[: _MAX_FILES_PER_REQUEST], failed_files
 
 
 def _decode_zip_name(info: zipfile.ZipInfo) -> str:
@@ -120,9 +172,6 @@ async def learn(
     if not files:
         raise HTTPException(status_code=400, detail="No files uploaded")
 
-    gp_paths: list[Path] = []
-    total_bytes = 0
-    failed_files: list[dict[str, str]] = []
     tabs = []
     parse_errors: list[dict[str, str]] = []
 
@@ -130,42 +179,13 @@ async def learn(
     # deleted as soon as the ``with`` block exits).
     with tempfile.TemporaryDirectory(prefix="elearn_") as tmp:
         tmp_dir = Path(tmp)
-
-        for upload in files:
-            total_bytes += upload.size or 0
-            if total_bytes > _MAX_UPLOAD_BYTES:
-                raise HTTPException(status_code=413, detail="Upload too large (max 200 MB)")
-
-            name = upload.filename or "unnamed"
-            dest = tmp_dir / name
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                content = await upload.read()
-                dest.write_bytes(content)
-            except OSError as exc:
-                failed_files.append({"file": name, "error": str(exc)})
-                continue
-
-            lower = name.lower()
-            if lower.endswith(".zip"):
-                try:
-                    gp_paths.extend(_extract_archive(dest, tmp_dir))
-                except (zipfile.BadZipFile, OSError) as exc:
-                    failed_files.append({"file": name, "error": f"bad zip: {exc}"})
-            elif lower.endswith(_SUPPORTED_EXTENSIONS):
-                gp_paths.append(dest)
-            else:
-                failed_files.append(
-                    {"file": name, "error": "unsupported format (use .gp3/.gp4/.gp5/.zip)"}
-                )
+        gp_paths, failed_files = await _ingest_uploads(files, tmp_dir)
 
         if not gp_paths:
             raise HTTPException(
                 status_code=400,
                 detail={"message": "No supported GP files found", "failed": failed_files},
             )
-
-        gp_paths = gp_paths[:_MAX_FILES_PER_REQUEST]
 
         # 1. Parse tabs (style override wins over filename inference).
         reader = GPReader()
@@ -213,6 +233,122 @@ async def learn(
             "note_overlap_rate": s.note_overlap_rate,
             "staccato_rate": s.staccato_rate,
             "top_chord_shapes": dict(list(s.chord_shape_top_k.items())[:5]),
+        }
+        for s in stats.values()
+    ]
+    priors_payload = [
+        {
+            "style": d.style_label,
+            "knowledge_id": d.knowledge_id,
+            "payload": d.payload,
+            "confidence": d.confidence,
+            "source_count": len(d.source_ids),
+            "derivation_method": d.derivation_method,
+        }
+        for d in derived
+    ]
+
+    return {
+        "code": 0,
+        "data": {
+            "parsed_files": len(tabs),
+            "total_files": len(gp_paths),
+            "failed_files": failed_files + parse_errors,
+            "style_stats": stats_payload,
+            "derived_priors": priors_payload,
+            "new_version": new_version,
+            "promoted": promote,
+            "total_notes": sum(s.total_notes for s in stats.values()),
+        },
+        "message": "ok",
+    }
+
+
+@router.post("/learn/drum", response_model=dict)
+async def learn_drum(
+    user: User = Depends(get_current_user),
+    files: list[UploadFile] = File(..., description="GP3/GP4/GP5 files or zip archives with drum tracks"),
+    style: str | None = Form(None, description="Optional style override (rock/metal/pop/funk/jazz)"),
+    promote: bool = Form(True, description="Immediately promote the new KB version to active"),
+) -> dict:
+    """Upload GP files or zips; run the drum learning loop (StickPilot).
+
+    Flow: save uploads → unzip archives → parse drum tracks → extract drum
+    statistics → derive sticking priors → write versioned KB snapshot into
+    ``drum_kb2_sticking.json``.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    tabs = []
+    parse_errors: list[dict[str, str]] = []
+
+    with tempfile.TemporaryDirectory(prefix="elearn_drum_") as tmp:
+        tmp_dir = Path(tmp)
+        gp_paths, failed_files = await _ingest_uploads(files, tmp_dir)
+
+        if not gp_paths:
+            raise HTTPException(
+                status_code=400,
+                detail={"message": "No supported GP files found", "failed": failed_files},
+            )
+
+        # 1. Parse drum tracks (style override wins over filename inference).
+        reader = DrumReader()
+        for gp_path in gp_paths:
+            try:
+                tab = reader.parse(
+                    gp_path,
+                    style_label=style if style else None,
+                )
+                if tab.notes:
+                    tabs.append(tab)
+                else:
+                    parse_errors.append({"file": gp_path.name, "error": "no drum notes"})
+            except Exception as exc:  # noqa: BLE001 — per-file isolation
+                parse_errors.append({"file": gp_path.name, "error": str(exc)[:200]})
+
+    if not tabs:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": "All files failed to parse", "failed": parse_errors},
+        )
+
+    # 2. Extract drum statistics per style.
+    stats = DrumStatsExtractor().extract(tabs)
+
+    # 3. Derive empirical sticking priors.
+    source_ids_map = {
+        style_label: [t.file_path for t in tabs if t.style_label == style_label]
+        for style_label in stats
+    }
+    derived = DrumPriorsDeriver().derive(stats, source_ids_map)
+    if not derived:
+        raise HTTPException(
+            status_code=422,
+            detail="No styles with enough samples (>=5 tabs per style) to derive priors",
+        )
+
+    # 4. Write KB version (routes priors into drum_kb2_sticking.json).
+    writer = _kb_writer()
+    new_version = writer.write(derived, promote=promote)
+
+    stats_payload = [
+        {
+            "style": s.style_label,
+            "sample_count": s.sample_count,
+            "total_notes": s.total_notes,
+            "total_measures": s.total_measures,
+            "hit_density": s.hit_density,
+            "avg_inter_hit_gap_beats": s.avg_inter_hit_gap_beats,
+            "velocity_mean": s.velocity_mean,
+            "accent_rate": s.accent_rate,
+            "ghost_note_rate": s.ghost_note_rate,
+            "flam_rate": s.flam_rate,
+            "double_stroke_rate": s.double_stroke_rate,
+            "right_hand_rate": s.right_hand_rate,
+            "hand_switch_pattern": s.hand_switch_pattern,
+            "top_pieces": dict(list(s.piece_distribution.items())[:6]),
         }
         for s in stats.values()
     ]

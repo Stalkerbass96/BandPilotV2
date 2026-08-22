@@ -32,15 +32,26 @@ logger = logging.getLogger("fretpilot.elearning.kb_writer")
 
 # KB2 asset filename (constant across versions).
 _KB2_FILENAME = "kb2_performance.json"
+# Drum KB2 asset filename (constant across versions).
+_DRUM_KB2_FILENAME = "drum_kb2_sticking.json"
 # All KB domain filenames that should be copied to version snapshots.
 _KB_DOMAIN_FILES = (
     "kb1_arrangement.json",
     "kb2_performance.json",
     "kb3_notation.json",
     "kb4_instruments.json",
+    "drum_kb1_arrangement.json",
+    "drum_kb2_sticking.json",
+    "drum_kb3_notation.json",
 )
 # Manifest filename.
 _MANIFEST_FILENAME = "version_manifest.json"
+
+# Domain → merge-target filename and new-entry kind.
+_DOMAIN_MERGE_TARGETS: dict[str, tuple[str, str]] = {
+    "kb2_performance": (_KB2_FILENAME, "fingering_priors"),
+    "drum_kb2_sticking": (_DRUM_KB2_FILENAME, "sticking_priors"),
+}
 
 
 def _stamp_snapshot_version(path: Path, version: str) -> None:
@@ -118,79 +129,27 @@ class KBWriter:
             else:
                 logger.debug("Source asset missing: %s", src)
 
-        # 2. Load and update kb2_performance.json with derived priors.
-        kb2_path = version_dir / _KB2_FILENAME
-        if kb2_path.exists():
-            kb2_data = json.loads(kb2_path.read_text(encoding="utf-8"))
-        else:
-            kb2_data = {
-                "snapshot_version": snapshot_version,
-                "schema_version": "1",
-                "status": "approved",
-                "entries": [],
-            }
-
-        # 3. Update entries with derived priors.
-        kb2_data["snapshot_version"] = snapshot_version
-        entries: list[dict[str, Any]] = kb2_data.get("entries", [])
-
+        # 2–4. Merge derived priors into their target domain files.
+        #      Guitar priors target kb2_performance.json, drum priors target
+        #      drum_kb2_sticking.json (see _DOMAIN_MERGE_TARGETS).
+        by_domain: dict[str, list[DerivedPriors]] = {}
         for prior in derived_priors:
-            matched = False
-            for entry in entries:
-                if entry.get("knowledge_id") == prior.knowledge_id:
-                    entry["payload"] = {**entry.get("payload", {}), **prior.payload}
-                    entry["knowledge_version"] = snapshot_version
-                    entry["provenance"] = {
-                        "source_type": "empirical",
-                        "source_ids": list(prior.source_ids),
-                        "authored_by": "elearning/learning_loop",
-                        "notes": (
-                            f"Derived from {len(prior.source_ids)} ground truth tabs "
-                            f"via {prior.derivation_method}"
-                        ),
-                    }
-                    entry["evaluation"] = {
-                        "status": "evaluated",
-                        "confidence": prior.confidence,
-                        "tested_against": list(prior.source_ids),
-                    }
-                    matched = True
-                    break
+            by_domain.setdefault(prior.domain, []).append(prior)
 
-            if not matched:
-                scope: dict[str, list[str]] = {"style": [prior.style_label]}
-                entries.append({
-                    "knowledge_id": prior.knowledge_id,
-                    "domain": "kb2_performance",
-                    "kind": "fingering_priors",
-                    "schema_version": "1",
-                    "knowledge_version": snapshot_version,
-                    "status": "approved",
-                    "payload": dict(prior.payload),
-                    "scope": scope,
-                    "provenance": {
-                        "source_type": "empirical",
-                        "source_ids": list(prior.source_ids),
-                        "authored_by": "elearning/learning_loop",
-                        "notes": (
-                            f"Derived from {len(prior.source_ids)} ground truth tabs "
-                            f"via {prior.derivation_method}"
-                        ),
-                    },
-                    "evaluation": {
-                        "status": "evaluated",
-                        "confidence": prior.confidence,
-                        "tested_against": list(prior.source_ids),
-                    },
-                })
-
-        kb2_data["entries"] = entries
-
-        # 4. Write the updated KB2 file.
-        kb2_path.write_text(
-            json.dumps(kb2_data, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        for domain, domain_priors in by_domain.items():
+            target = _DOMAIN_MERGE_TARGETS.get(domain)
+            if target is None:
+                logger.warning("Unknown priors domain %r; skipping %d priors",
+                               domain, len(domain_priors))
+                continue
+            filename, new_entry_kind = target
+            self._merge_domain_file(
+                version_dir / filename,
+                filename,
+                snapshot_version,
+                domain_priors,
+                new_entry_kind,
+            )
 
         # 5. Update version manifest.
         self._update_manifest(snapshot_version, derived_priors)
@@ -214,10 +173,39 @@ class KBWriter:
     # ─── List / Load / Rollback / Diff ───
 
     def list_versions(self) -> list[dict[str, Any]]:
-        """List all KB versions and their metadata, sorted by version string."""
+        """List all KB versions and their metadata, sorted by version string.
+
+        Each version entry is augmented with ``styles_present`` — the full set
+        of styles in the KB at that version (not just the delta).
+        """
         manifest = self._load_manifest()
         versions = manifest.get("versions", [])
-        return sorted(versions, key=lambda v: v.get("version", ""))
+        result = []
+        for v in sorted(versions, key=lambda v: v.get("version", "")):
+            v = dict(v)  # shallow copy so we don't mutate the manifest
+            v["styles_present"] = self._compute_styles_present(v.get("version", ""))
+            result.append(v)
+        return result
+
+    def _compute_styles_present(self, version: str) -> list[str]:
+        """Return all style labels present in the KB assets for a version.
+
+        Merges styles from both the guitar KB2 and the drum KB2 sticking
+        files so the version table shows the union of supported styles.
+        """
+        styles: set[str] = set()
+        for filename in (_KB2_FILENAME, _DRUM_KB2_FILENAME):
+            path = self._versions_dir / version / filename
+            if not path.exists():
+                path = self._assets_dir / filename
+            if not path.exists():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for entry in data.get("entries", []):
+                scope = entry.get("scope", {})
+                for s in scope.get("style", []):
+                    styles.add(s)
+        return sorted(styles)
 
     def load_version(self, version: str):
         """Load a specific KB version.
@@ -319,6 +307,89 @@ class KBWriter:
         }
 
     # ─── Private helpers ───
+
+    def _merge_domain_file(
+        self,
+        path: Path,
+        filename: str,
+        snapshot_version: str,
+        priors: list[DerivedPriors],
+        new_entry_kind: str,
+    ) -> None:
+        """Merge derived priors into a single domain asset file.
+
+        Existing entries (matched by ``knowledge_id``) get their payload merged
+        and provenance/evaluation stamped; new entries are appended with the
+        given ``new_entry_kind`` and a style scope.
+        """
+        if path.exists():
+            data = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            data = {
+                "snapshot_version": snapshot_version,
+                "schema_version": "1",
+                "status": "approved",
+                "entries": [],
+            }
+
+        data["snapshot_version"] = snapshot_version
+        entries: list[dict[str, Any]] = data.get("entries", [])
+
+        for prior in priors:
+            matched = False
+            for entry in entries:
+                if entry.get("knowledge_id") == prior.knowledge_id:
+                    entry["payload"] = {**entry.get("payload", {}), **prior.payload}
+                    entry["knowledge_version"] = snapshot_version
+                    entry["provenance"] = {
+                        "source_type": "empirical",
+                        "source_ids": list(prior.source_ids),
+                        "authored_by": "elearning/learning_loop",
+                        "notes": (
+                            f"Derived from {len(prior.source_ids)} ground truth tabs "
+                            f"via {prior.derivation_method}"
+                        ),
+                    }
+                    entry["evaluation"] = {
+                        "status": "evaluated",
+                        "confidence": prior.confidence,
+                        "tested_against": list(prior.source_ids),
+                    }
+                    matched = True
+                    break
+
+            if not matched:
+                scope: dict[str, list[str]] = {"style": [prior.style_label]}
+                entries.append({
+                    "knowledge_id": prior.knowledge_id,
+                    "domain": prior.domain,
+                    "kind": new_entry_kind,
+                    "schema_version": "1",
+                    "knowledge_version": snapshot_version,
+                    "status": "approved",
+                    "payload": dict(prior.payload),
+                    "scope": scope,
+                    "provenance": {
+                        "source_type": "empirical",
+                        "source_ids": list(prior.source_ids),
+                        "authored_by": "elearning/learning_loop",
+                        "notes": (
+                            f"Derived from {len(prior.source_ids)} ground truth tabs "
+                            f"via {prior.derivation_method}"
+                        ),
+                    },
+                    "evaluation": {
+                        "status": "evaluated",
+                        "confidence": prior.confidence,
+                        "tested_against": list(prior.source_ids),
+                    },
+                })
+
+        data["entries"] = entries
+        path.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
 
     def _load_version_kb2(self, version: str) -> dict[str, Any]:
         """Load the kb2_performance.json from a version directory."""

@@ -23,6 +23,9 @@ _KB_DOMAINS = (
     "kb2_performance",
     "kb3_notation",
     "kb4_instruments",
+    "drum_kb1_arrangement",
+    "drum_kb2_sticking",
+    "drum_kb3_notation",
 )
 
 

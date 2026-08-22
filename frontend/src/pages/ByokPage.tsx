@@ -121,15 +121,32 @@ export default function ByokPage(): JSX.Element {
 
   return (
     <Box className="flex flex-col gap-6">
-      <Box>
-        <Typography
-          variant="h5"
-          fontWeight={600}
-          sx={{ color: palette.textPrimary, mb: 1 }}
-        >
-          BYOK — LLM API Key Configuration
-        </Typography>
-        <Typography variant="body2" sx={{ color: palette.textSecondary }}>
+      <Box
+        className="rounded-2xl px-6 py-7"
+        sx={{
+          background: `linear-gradient(135deg, ${palette.elevated} 0%, ${palette.surface} 100%)`,
+          border: `1px solid ${palette.borderDefault}`,
+        }}
+      >
+        <Box className="flex items-center gap-2.5 mb-2">
+          <Box
+            sx={{
+              width: 32,
+              height: 32,
+              borderRadius: 2,
+              backgroundColor: `${palette.brandPrimary}15`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <KeyIcon sx={{ color: palette.brandPrimary, fontSize: 18 }} />
+          </Box>
+          <Typography variant="h5" fontWeight={700} sx={{ color: palette.textPrimary, letterSpacing: "-0.01em" }}>
+            LLM Settings
+          </Typography>
+        </Box>
+        <Typography variant="body2" sx={{ color: palette.textSecondary, lineHeight: 1.6, maxWidth: 520 }}>
           Configure your own LLM API key to enable AI-driven note rewrite.
           Without a key, FretPilot runs in degraded (rule-based) mode.
         </Typography>
@@ -317,7 +334,7 @@ export default function ByokPage(): JSX.Element {
                     color: palette.textPrimary,
                     "&:hover": {
                       borderColor: palette.brandPrimary,
-                      backgroundColor: "rgba(99, 102, 241, 0.04)",
+                      backgroundColor: "rgba(232, 162, 75, 0.06)",
                     },
                   }}
                 >
@@ -333,7 +350,7 @@ export default function ByokPage(): JSX.Element {
                       borderColor: palette.error,
                       color: palette.error,
                       "&:hover": {
-                        backgroundColor: "rgba(239, 68, 68, 0.04)",
+                        backgroundColor: "rgba(248, 113, 113, 0.06)",
                       },
                     }}
                   >

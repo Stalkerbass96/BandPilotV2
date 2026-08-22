@@ -1,0 +1,34 @@
+{
+  "snapshot_version": "2026.08.18-123416",
+  "schema_version": "1",
+  "status": "approved",
+  "entries": [
+    {
+      "knowledge_id": "drum_kb3-gp5-notation",
+      "domain": "drum_kb3_notation",
+      "kind": "notation_conventions",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.19-230000",
+      "status": "approved",
+      "payload": {
+        "gm_drum_map_enabled": true,
+        "use_drum_staff": true,
+        "show_sticking": false,
+        "velocity_as_accent": true,
+        "ghost_note_threshold": 30,
+        "accent_threshold": 90
+      },
+      "scope": {
+        "format": [
+          "gp5"
+        ]
+      },
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": [
+          "stickpilot-notation"
+        ]
+      }
+    }
+  ]
+}

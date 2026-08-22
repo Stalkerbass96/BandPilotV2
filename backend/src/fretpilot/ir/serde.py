@@ -27,6 +27,14 @@ from fretpilot.ir.models import (
     ScoreTiming,
     Transformation,
 )
+from fretpilot.ir.drum_models import (
+    SCHEMA_VERSION as DRUM_SCHEMA_VERSION,
+    DrumHitLocation,
+    DrumMeasure,
+    DrumNoteEvent,
+    DrumProjectIR,
+    DrumTrackIR,
+)
 
 
 def _parse_articulation(raw: dict[str, Any]) -> IRArticulation:
@@ -190,4 +198,136 @@ def load_ir(path: Path | str) -> GuitarProjectIR:
     return ir_from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-__all__ = ["ir_to_dict", "ir_from_dict", "save_ir", "load_ir"]
+# ─── Drum IR deserialization ───
+
+
+def _parse_drum_hit_location(raw: dict[str, Any]) -> DrumHitLocation:
+    return DrumHitLocation(
+        piece=str(raw.get("piece", "unknown")),
+        sticking=str(raw.get("sticking", "")),
+        technique=str(raw.get("technique", "normal")),
+    )
+
+
+def _parse_drum_note_event(raw: dict[str, Any]) -> DrumNoteEvent:
+    score_raw = raw["score"]
+    perf_raw = raw["performance"]
+    return DrumNoteEvent(
+        id=str(raw["id"]),
+        source_note_index=int(raw["source_note_index"]),
+        pitch=int(raw["pitch"]),
+        piece=str(raw.get("piece", "unknown")),
+        score=ScoreTiming(
+            start_beat=float(score_raw["start_beat"]),
+            duration_beats=float(score_raw["duration_beats"]),
+            measure_number=int(score_raw["measure_number"]),
+            beat_in_measure=float(score_raw["beat_in_measure"]),
+            voice=int(score_raw.get("voice", 1)),
+            tie_in=bool(score_raw.get("tie_in", False)),
+            tie_out=bool(score_raw.get("tie_out", False)),
+        ),
+        performance=PerformanceTiming(
+            source_start_beat=float(perf_raw["source_start_beat"]),
+            source_duration_beats=float(perf_raw["source_duration_beats"]),
+            velocity=int(perf_raw["velocity"]),
+        ),
+        location=_parse_drum_hit_location(raw.get("location", {})),
+        confidence=_parse_confidence(raw.get("confidence")),
+    )
+
+
+def _parse_drum_measure(raw: dict[str, Any]) -> DrumMeasure:
+    return DrumMeasure(
+        number=int(raw["number"]),
+        start_beat=float(raw["start_beat"]),
+        duration_beats=float(raw["duration_beats"]),
+        numerator=int(raw["numerator"]),
+        denominator=int(raw["denominator"]),
+        pattern=str(raw.get("pattern", "unknown")),
+        events=[_parse_drum_note_event(e) for e in raw.get("events", [])],
+    )
+
+
+def _parse_drum_track(raw: dict[str, Any]) -> DrumTrackIR:
+    return DrumTrackIR(
+        id=str(raw["id"]),
+        name=str(raw["name"]),
+        source_track_index=raw.get("source_track_index"),
+        kit=str(raw.get("kit", "standard_5pc")),
+        style=str(raw.get("style", "unknown")),
+        measures=[_parse_drum_measure(m) for m in raw.get("measures", [])],
+    )
+
+
+def drum_ir_from_dict(data: dict[str, Any]) -> DrumProjectIR:
+    """Deserialize a dict into a DrumProjectIR.
+
+    Validates schema_version; raises ValueError on mismatch.
+    """
+    version = str(data.get("schema_version", DRUM_SCHEMA_VERSION))
+    if not version.startswith("1."):
+        raise ValueError(
+            f"Unsupported drum IR schema version: {version}, expected 1.x"
+        )
+
+    return DrumProjectIR(
+        title=str(data.get("title", "")),
+        source=str(data.get("source", "")),
+        schema_version=version,
+        tempo_map=[
+            IRTempoEvent(beat=float(e["beat"]), bpm=float(e["bpm"]))
+            for e in data.get("tempo_map", [])
+        ],
+        time_signatures=[
+            IRTimeSignatureEvent(
+                beat=float(e["beat"]),
+                numerator=int(e["numerator"]),
+                denominator=int(e["denominator"]),
+            )
+            for e in data.get("time_signatures", [])
+        ],
+        tracks=[_parse_drum_track(t) for t in data.get("tracks", [])],
+        knowledge=_parse_knowledge(data.get("knowledge")),
+        style_label=str(data.get("style_label", "unknown")),
+        changes=[_parse_transformation(c) for c in data.get("changes", [])],
+        warnings=[str(w) for w in data.get("warnings", [])],
+    )
+
+
+def load_drum_ir(path: Path | str) -> DrumProjectIR:
+    """Load a drum IR from a JSON file."""
+    return drum_ir_from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+
+
+def load_merged_irs(path: Path | str) -> tuple[GuitarProjectIR | None, DrumProjectIR | None]:
+    """Load merged IR file (ir_merged.json) produced by BandPilot orchestrator.
+
+    The JSON structure is::
+
+        {
+            "guitar": { ...guitar IR dict... } | null,
+            "drum":   { ...drum IR dict...   } | null,
+        }
+
+    Returns ``(guitar_ir, drum_ir)`` where either may be ``None``.
+    """
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    if "guitar" not in data or "drum" not in data:
+        raise ValueError(
+            "Invalid merged IR file: expected top-level keys 'guitar' and "
+            f"'drum', got {sorted(data.keys())}"
+        )
+    guitar_ir = ir_from_dict(data["guitar"]) if data.get("guitar") else None
+    drum_ir = drum_ir_from_dict(data["drum"]) if data.get("drum") else None
+    return guitar_ir, drum_ir
+
+
+__all__ = [
+    "ir_to_dict",
+    "ir_from_dict",
+    "save_ir",
+    "load_ir",
+    "drum_ir_from_dict",
+    "load_drum_ir",
+    "load_merged_irs",
+]

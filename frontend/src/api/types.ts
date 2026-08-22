@@ -53,6 +53,7 @@ export interface ProjectItem {
   status: string;
   style_label: string;
   degraded_mode: boolean;
+  instrument_family?: string;
 }
 
 export interface ProjectDetail extends ProjectItem {
@@ -67,6 +68,18 @@ export interface TrackSummaryItem {
   role: string;
   confidence: number;
   note_count: number;
+  is_drum?: boolean;
+  kit_type?: string;
+  detected_pieces?: string[];
+}
+
+// ─── Track Family (BandPilot multi-instrument) ───
+
+export interface TrackFamilyInfo {
+  family: string;
+  is_drum: boolean;
+  kit_type?: string;
+  detected_pieces?: string[];
 }
 
 export interface CleanupInfo {
@@ -104,6 +117,23 @@ export interface SeparationInfo {
   warnings: string[];
 }
 
+export interface DrumReport {
+  kit_type: string;
+  style_detected: string;
+  patterns: string[];
+  sticking_suggested: boolean;
+  velocity_normalized: boolean;
+}
+
+export interface TrackRepairInfo {
+  track_index: number;
+  module: string;
+  stages_completed: number;
+  note_count: number;
+  change_count: number;
+  drum_report?: DrumReport;
+}
+
 export interface RepairResponse {
   project_id: number;
   status: string;
@@ -114,6 +144,8 @@ export interface RepairResponse {
   cleanup: CleanupInfo | null;
   rewrite: RewriteInfo | null;
   separation: SeparationInfo | null;
+  tracks_repaired?: TrackRepairInfo[];
+  has_drums?: boolean;
 }
 
 export interface TransformationRecord {
@@ -189,11 +221,42 @@ export interface LearnResponse {
   total_notes: number;
 }
 
+/** Per-style statistics returned by the drum learning loop (StickPilot). */
+export interface DrumStyleStatsInfo {
+  style: string;
+  sample_count: number;
+  total_notes: number;
+  total_measures: number;
+  hit_density: number;
+  avg_inter_hit_gap_beats: number;
+  velocity_mean: number;
+  accent_rate: number;
+  ghost_note_rate: number;
+  flam_rate: number;
+  double_stroke_rate: number;
+  right_hand_rate: number;
+  hand_switch_pattern: string;
+  top_pieces: Record<string, number>;
+}
+
+/** Response of POST /api/elearning/learn/drum (mirrors LearnResponse). */
+export interface DrumLearnResponse {
+  parsed_files: number;
+  total_files: number;
+  failed_files: { file: string; error: string }[];
+  style_stats: DrumStyleStatsInfo[];
+  derived_priors: DerivedPriorsInfo[];
+  new_version: string;
+  promoted: boolean;
+  total_notes: number;
+}
+
 export interface KbVersion {
   version: string;
   timestamp: string;
   source_type: string;
   styles_updated: string[];
+  styles_present?: string[];
   knowledge_ids_updated: string[];
   total_sources: number;
   avg_confidence: number;

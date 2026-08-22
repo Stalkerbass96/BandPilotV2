@@ -13,7 +13,8 @@ import StraightenIcon from "@mui/icons-material/Straighten";
 import GraphicEqIcon from "@mui/icons-material/GraphicEq";
 import { motion } from "framer-motion";
 import type { SeparationInfo } from "../api/types";
-import { palette } from "../styles/tokens";
+import { palette, streamColors } from "../styles/tokens";
+import SeparationVisualizer from "./SeparationVisualizer";
 
 interface SeparationSummaryProps {
   separation: SeparationInfo;
@@ -44,12 +45,12 @@ export default function SeparationSummary({
       label: "Mixed Segments",
     },
     {
-      icon: <StraightenIcon sx={{ color: palette.info }} />,
+      icon: <StraightenIcon sx={{ color: streamColors.lead }} />,
       value: String(totalHigh),
       label: "Lead (melody)",
     },
     {
-      icon: <GraphicEqIcon sx={{ color: palette.warning }} />,
+      icon: <GraphicEqIcon sx={{ color: streamColors.rhythm }} />,
       value: String(totalLow),
       label: "Rhythm (riff)",
     },
@@ -130,33 +131,8 @@ export default function SeparationSummary({
           </Box>
 
           {separation.segments.length > 0 && (
-            <Box className="mt-3 flex flex-col gap-1">
-              <Typography
-                variant="caption"
-                fontWeight={600}
-                sx={{ color: palette.textSecondary }}
-              >
-                Segments:
-              </Typography>
-              {separation.segments.slice(0, 8).map((seg, i) => (
-                <Typography
-                  key={i}
-                  variant="caption"
-                  sx={{ color: palette.textSecondary }}
-                >
-                  • bars {seg.start_measure}–{seg.end_measure}: split at pitch{" "}
-                  {seg.split_pitch}, confidence{" "}
-                  {(seg.confidence * 100).toFixed(0)}%
-                </Typography>
-              ))}
-              {separation.segments.length > 8 && (
-                <Typography
-                  variant="caption"
-                  sx={{ color: palette.textTertiary }}
-                >
-                  …and {separation.segments.length - 8} more
-                </Typography>
-              )}
+            <Box className="mt-4">
+              <SeparationVisualizer segments={separation.segments} />
             </Box>
           )}
         </>

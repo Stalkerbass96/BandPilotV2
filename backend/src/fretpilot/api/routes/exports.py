@@ -16,8 +16,8 @@ from fretpilot.db.models import ExportRecord, Project, User
 from fretpilot.db.session import get_db
 from fretpilot.exporters.ample_midi.profile import load_profile
 from fretpilot.exporters.ample_midi.renderer import AmpleMidiExporter
-from fretpilot.exporters.gp5 import GP5Exporter
-from fretpilot.ir.serde import load_ir
+from fretpilot.exporters.gp5 import GP5Exporter, export_bandpilot
+from fretpilot.ir.serde import load_ir, load_merged_irs
 
 logger = logging.getLogger("fretpilot.api.exports")
 router = APIRouter()
@@ -47,8 +47,22 @@ def _project_dir(user: User, project_id: int) -> Path:
     return get_settings().job_root_path / str(user.id) / str(project_id)
 
 
-def _export_gp5(ir_path: Path, out_dir: Path) -> tuple[Path, int, int]:
-    """Export the IR to a .gp5 file."""
+def _export_gp5(project_dir: Path, out_dir: Path) -> tuple[Path, int, int]:
+    """Export the IR to a .gp5 file.
+
+    Checks for ir_merged.json (BandPilot multi-track) first, then
+    falls back to ir.json (guitar-only) for backward compatibility.
+    """
+    merged_path = project_dir / "ir_merged.json"
+    ir_path = project_dir / "ir.json"
+
+    if merged_path.exists():
+        guitar_ir, drum_ir = load_merged_irs(merged_path)
+        out_path = out_dir / "output.gp5"
+        result = export_bandpilot(guitar_ir, drum_ir, out_path)
+        return out_path, result.note_count, result.measure_count
+
+    # Guitar-only backward-compatible path
     ir = load_ir(ir_path)
     exporter = GP5Exporter()
     out_path = out_dir / "output.gp5"
@@ -56,9 +70,18 @@ def _export_gp5(ir_path: Path, out_dir: Path) -> tuple[Path, int, int]:
     return out_path, result.note_count, result.measure_count
 
 
-def _export_ample(ir_path: Path, out_dir: Path) -> tuple[Path, int, int]:
+def _export_ample(project_dir: Path, out_dir: Path) -> tuple[Path, int, int]:
     """Export the IR to an Ample MIDI file."""
-    ir = load_ir(ir_path)
+    merged_path = project_dir / "ir_merged.json"
+    ir_path = project_dir / "ir.json"
+
+    if merged_path.exists():
+        guitar_ir, _ = load_merged_irs(merged_path)
+        ir = guitar_ir
+        if ir is None:
+            raise HTTPException(400, "No guitar IR found in merged result for Ample MIDI export.")
+    else:
+        ir = load_ir(ir_path)
     profile = load_profile("ample_eclipse")
     exporter = AmpleMidiExporter(profile)
     out_path = out_dir / "output_ample.mid"
@@ -77,16 +100,17 @@ def export_project(
     project = _get_user_project(db, user, project_id)
     project_dir = _project_dir(user, project_id)
     ir_path = project_dir / "ir.json"
-    if not ir_path.exists():
+    merged_path = project_dir / "ir_merged.json"
+    if not ir_path.exists() and not merged_path.exists():
         raise HTTPException(400, "No repair result found. Run repair first.")
 
     exports_dir = project_dir / "exports"
     exports_dir.mkdir(parents=True, exist_ok=True)
 
     if req.format == "gp5":
-        out_path, note_count, measure_count = _export_gp5(ir_path, exports_dir)
+        out_path, note_count, measure_count = _export_gp5(project_dir, exports_dir)
     elif req.format == "ample_midi":
-        out_path, note_count, measure_count = _export_ample(ir_path, exports_dir)
+        out_path, note_count, measure_count = _export_ample(project_dir, exports_dir)
     else:
         raise HTTPException(400, f"Unsupported format: {req.format}")
 

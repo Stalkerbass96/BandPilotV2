@@ -74,7 +74,7 @@ export default function UploadZone({
           opacity: disabled ? 0.6 : 1,
           cursor: disabled ? "not-allowed" : "pointer",
           backgroundColor: isDragging
-            ? "rgba(99, 102, 241, 0.06)"
+            ? "rgba(232, 162, 75, 0.06)"
             : palette.canvas,
           transition: "all 0.2s ease",
         }}

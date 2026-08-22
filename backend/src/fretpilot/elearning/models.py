@@ -197,6 +197,10 @@ class DerivedPriors:
     confidence: float
     derivation_method: str
     stats_snapshot: dict[str, Any]
+    # Target KB domain file and entry kind. Guitar fingering priors default
+    # to "kb2_performance"; drum sticking priors use "drum_kb2_sticking".
+    domain: str = "kb2_performance"
+    kind: str = "fingering_priors"
 
 
 __all__ = [
