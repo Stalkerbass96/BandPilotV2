@@ -197,7 +197,7 @@ class AmpleMidiExporter:
 
         warnings: list[str] = []
         perf_events: list[tuple[int, int, mido.Message]] = []
-        keyswitch_count = _schedule_keyswitches(
+        _schedule_keyswitches(
             source_notes, event_id_map, self.profile, perf_events, warnings
         )
 

@@ -13,13 +13,14 @@ import logging
 import httpx
 
 from fretpilot.ai.models import (
-    AIProviderIdentity,
     AIProviderError,
+    AIProviderIdentity,
     RewriteDecision,
     RewriteRequest,
     RewriteResponse,
     TrackFeatures,
 )
+from fretpilot.ai.url_security import UnsafeProviderUrl, validate_provider_base_url
 
 logger = logging.getLogger("fretpilot.ai.providers.openai")
 
@@ -82,7 +83,7 @@ class OpenAICompatibleAdvisor:
     ) -> None:
         self._api_key = api_key
         self._model = model
-        self._base_url = base_url.rstrip("/")
+        self._base_url = validate_provider_base_url(base_url)
         self._timeout = timeout
         self.identity = AIProviderIdentity(
             provider="openai_compatible",
@@ -112,15 +113,20 @@ class OpenAICompatibleAdvisor:
             "max_tokens": 4096,
         }
         try:
-            response = httpx.post(
-                url, json=payload, headers=self._headers(), timeout=self._timeout
-            )
+            validate_provider_base_url(self._base_url, resolve_dns=True)
+            with httpx.Client(follow_redirects=False, trust_env=False) as client:
+                response = client.post(
+                    url, json=payload, headers=self._headers(), timeout=self._timeout
+                )
             response.raise_for_status()
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, UnsafeProviderUrl) as exc:
             raise AIProviderError(f"LLM request failed: {exc}") from exc
 
-        data = response.json()
-        message = data["choices"][0]["message"]
+        try:
+            data = response.json()
+            message = data["choices"][0]["message"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise AIProviderError("LLM returned an invalid response payload") from exc
         # Some providers return the answer in `content`; reasoning models may
         # keep it there too (with the thinking in `reasoning_content`).  If
         # `content` is empty/missing, fall back to `reasoning_content` so we

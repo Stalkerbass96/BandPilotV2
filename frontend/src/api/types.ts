@@ -53,7 +53,7 @@ export interface ProjectItem {
   status: string;
   style_label: string;
   degraded_mode: boolean;
-  instrument_family?: string;
+  instrument_family: string;
 }
 
 export interface ProjectDetail extends ProjectItem {
@@ -67,6 +67,8 @@ export interface TrackSummaryItem {
   is_guitar: boolean;
   role: string;
   confidence: number;
+  reason?: string;
+  user_overridden?: boolean;
   note_count: number;
   is_drum?: boolean;
   kit_type?: string;
@@ -123,19 +125,33 @@ export interface DrumReport {
   patterns: string[];
   sticking_suggested: boolean;
   velocity_normalized: boolean;
+  piece_stats: DrumPieceStat[];
+}
+
+export interface DrumPieceStat {
+  name: string;
+  hit_count: number;
+  avg_velocity: number;
 }
 
 export interface TrackRepairInfo {
   track_index: number;
+  track_name: string;
+  family: string;
   module: string;
   stages_completed: number;
   note_count: number;
   change_count: number;
   drum_report?: DrumReport;
+  skipped: boolean;
+  failed: boolean;
+  error: string | null;
+  warnings: string[];
 }
 
 export interface RepairResponse {
   project_id: number;
+  job_id: number;
   status: string;
   style_label: string;
   degraded_mode: boolean;
@@ -144,8 +160,40 @@ export interface RepairResponse {
   cleanup: CleanupInfo | null;
   rewrite: RewriteInfo | null;
   separation: SeparationInfo | null;
-  tracks_repaired?: TrackRepairInfo[];
-  has_drums?: boolean;
+  tracks_repaired: TrackRepairInfo[];
+  has_drums: boolean;
+  arrangement_mode: ArrangementMode;
+  validation_status: string;
+  validation_issues: ValidationIssue[];
+}
+
+export interface RepairJob {
+  id: number;
+  run_id: string | null;
+  status: string;
+  progress: number;
+  arrangement_mode: ArrangementMode;
+  settings: Record<string, unknown>;
+  result: RepairResponse | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+export interface RepairAcceptedResponse {
+  project_id: number;
+  job: RepairJob;
+  status_url: string;
+}
+
+export type ArrangementMode = "faithful" | "playable_arrangement" | "creative_rewrite";
+
+export interface ValidationIssue {
+  code: string;
+  severity: string;
+  message: string;
+  track_id: string | null;
+  note_ids: string[];
 }
 
 export interface TransformationRecord {
@@ -167,6 +215,11 @@ export interface RepairReport {
     style_label: string;
     degraded_mode: boolean;
     note_count: number;
+    unresolved_note_count?: number;
+    validation_status?: string;
+    validation_issues?: ValidationIssue[];
+    schema_version?: string;
+    arrangement_mode?: ArrangementMode;
   };
 }
 
@@ -260,6 +313,7 @@ export interface KbVersion {
   knowledge_ids_updated: string[];
   total_sources: number;
   avg_confidence: number;
+  status?: "candidate" | "evaluated" | "promoted";
 }
 
 export interface VersionsResponse {

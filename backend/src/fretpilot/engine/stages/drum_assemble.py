@@ -14,7 +14,6 @@ The assembled IR contains:
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Any
 
 from fretpilot.engine.drum_context import DrumPipelineContext, NotatedNote
 from fretpilot.ir.drum_models import (
@@ -25,9 +24,9 @@ from fretpilot.ir.drum_models import (
     DrumTrackIR,
 )
 from fretpilot.ir.models import (
+    IRKnowledgeReference,
     IRTempoEvent,
     IRTimeSignatureEvent,
-    IRKnowledgeReference,
     NoteConfidence,
     PerformanceTiming,
     ScoreTiming,

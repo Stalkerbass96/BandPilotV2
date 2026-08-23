@@ -10,8 +10,6 @@ Tests cover:
 
 from __future__ import annotations
 
-import pytest
-
 from fretpilot.ai.advisor import (
     ShadowRewriteAdvisor,
     apply_rewrite_decisions,
@@ -30,9 +28,7 @@ from fretpilot.ai.models import (
 )
 from fretpilot.knowledge.tunings import TuningRegistry
 from fretpilot.midi.models import NormalizedNote, NormalizedTrack
-
 from tests.conftest import _note
-
 
 # ─── Helpers ───
 

@@ -18,13 +18,38 @@ from pathlib import Path
 
 import mido
 
-from fretpilot.elearning.models import GroundTruthTab
+from fretpilot.elearning.models import (
+    GroundTruthNote,
+    GroundTruthTab,
+    ProfessionalScoreCorpus,
+)
 
 logger = logging.getLogger("fretpilot.elearning.gp_to_midi")
 
 TPB = 960  # ticks per beat, same as gp.Duration.quarterTime
 DEFAULT_VELOCITY = 95
 GUITAR_PROGRAM = 30  # Overdriven Guitar (GM)
+
+_MIDI_TEXT_REPLACEMENTS = str.maketrans(
+    {
+        "‘": "'",
+        "’": "'",
+        "“": '"',
+        "”": '"',
+        "–": "-",
+        "—": "-",
+        "‹": "<",
+        "›": ">",
+        "…": "...",
+        "～": "~",
+    }
+)
+
+
+def _midi_safe_text(value: str) -> str:
+    """Normalize SMF text to mido's Latin-1 metadata encoding."""
+    normalized = value.translate(_MIDI_TEXT_REPLACEMENTS)
+    return normalized.encode("latin1", errors="replace").decode("latin1")
 
 
 class GPMidiConverter:
@@ -85,11 +110,20 @@ class GPMidiConverter:
         for note in tab.notes:
             if note.is_tie:
                 continue
-            on_tick = int(round(note.beat_in_measure * TPB))
-            # Compute absolute tick from measure number and beat
-            # We need measure start tick — reconstruct from time signature
-            # For simplicity, use cumulative beats
-            abs_on_tick = self._measure_to_abs_tick(note.measure_number, note.beat_in_measure, tab.time_signature)
+            # GPReader retains the actual absolute beat, including pickup bars
+            # and time-signature changes. Reconstructing it from the initial
+            # meter loses rhythm before the product even sees the MIDI.
+            absolute_beat = note.absolute_start_beat
+            if absolute_beat == 0.0 and (
+                note.measure_number != 1 or note.beat_in_measure != 0.0
+            ):
+                # Compatibility for hand-built/legacy GroundTruthNote values
+                # created before absolute_start_beat became part of the model.
+                numerator, _denominator = tab.time_signature
+                absolute_beat = (
+                    (note.measure_number - 1) * numerator + note.beat_in_measure
+                )
+            abs_on_tick = int(round(absolute_beat * TPB))
             abs_off_tick = abs_on_tick + int(round(note.duration_beats * TPB))
             events.append((abs_on_tick, True, note.pitch, note.velocity))
             events.append((abs_off_tick, False, note.pitch, 0))
@@ -125,6 +159,144 @@ class GPMidiConverter:
         midi.save(str(output_path))
         logger.debug("MIDI exported: %s (%d notes)", output_path, len(tab.notes))
         return output_path
+
+    def convert_corpus(
+        self,
+        corpus: ProfessionalScoreCorpus,
+        output_path: str | Path | None = None,
+    ) -> Path:
+        """Convert every GP score track into one faithful type-1 MIDI file."""
+        if output_path is None:
+            fd, tmp = tempfile.mkstemp(suffix=".mid", prefix="elearning-song-")
+            import os
+
+            os.close(fd)
+            destination = Path(tmp)
+        else:
+            destination = Path(output_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+
+        midi = mido.MidiFile(ticks_per_beat=TPB, type=1)
+        midi.tracks.append(self._build_corpus_meta_track(corpus))
+        melodic_channel = 0
+        for source_track in corpus.tracks:
+            if source_track.is_percussion:
+                channel = 9
+            else:
+                while melodic_channel == 9:
+                    melodic_channel += 1
+                channel = melodic_channel % 16
+                if channel == 9:
+                    channel = 10
+                melodic_channel += 1
+            midi.tracks.append(
+                self._build_music_track(
+                    name=source_track.name,
+                    program=source_track.program,
+                    notes=source_track.notes,
+                    channel=channel,
+                )
+            )
+
+        midi.save(str(destination))
+        logger.debug(
+            "Full-score MIDI exported: %s (%d tracks)",
+            destination,
+            len(corpus.tracks),
+        )
+        return destination
+
+    @staticmethod
+    def _build_corpus_meta_track(corpus: ProfessionalScoreCorpus) -> mido.MidiTrack:
+        track = mido.MidiTrack()
+        events: list[tuple[int, int, mido.MetaMessage]] = []
+        for item in corpus.tempo_map:
+            tick = max(0, int(round(float(item["beat"]) * TPB)))
+            events.append(
+                (
+                    tick,
+                    0,
+                    mido.MetaMessage(
+                        "set_tempo", tempo=mido.bpm2tempo(float(item["bpm"])), time=0
+                    ),
+                )
+            )
+
+        previous_signature: tuple[int, int] | None = None
+        for item in corpus.time_signature_map:
+            signature = (int(item["numerator"]), int(item["denominator"]))
+            if signature == previous_signature:
+                continue
+            previous_signature = signature
+            tick = max(0, int(round(float(item["beat"]) * TPB)))
+            events.append(
+                (
+                    tick,
+                    1,
+                    mido.MetaMessage(
+                        "time_signature",
+                        numerator=signature[0],
+                        denominator=signature[1],
+                        time=0,
+                    ),
+                )
+            )
+
+        previous_tick = 0
+        for tick, _priority, message in sorted(events, key=lambda event: event[:2]):
+            message.time = max(0, tick - previous_tick)
+            track.append(message)
+            previous_tick = tick
+        track.append(mido.MetaMessage("end_of_track", time=0))
+        return track
+
+    @staticmethod
+    def _build_music_track(
+        *,
+        name: str,
+        program: int,
+        notes: list[GroundTruthNote],
+        channel: int,
+    ) -> mido.MidiTrack:
+        track = mido.MidiTrack()
+        safe_name = _midi_safe_text(name)[:127]
+        track.append(mido.MetaMessage("track_name", name=safe_name, time=0))
+        track.append(mido.MetaMessage("instrument_name", name=safe_name, time=0))
+        if channel != 9:
+            track.append(
+                mido.Message(
+                    "program_change",
+                    program=max(0, min(127, int(program))),
+                    channel=channel,
+                    time=0,
+                )
+            )
+
+        events: list[tuple[int, bool, int, int]] = []
+        for note in notes:
+            if note.is_tie:
+                continue
+            start = max(0, int(round(note.absolute_start_beat * TPB)))
+            end = start + max(1, int(round(note.duration_beats * TPB)))
+            events.append((start, True, note.pitch, note.velocity))
+            events.append((end, False, note.pitch, 0))
+        events.sort(key=lambda event: (event[0], 0 if not event[1] else 1))
+
+        previous_tick = 0
+        for tick, is_on, pitch, velocity in events:
+            delta = max(0, tick - previous_tick)
+            track.append(
+                mido.Message(
+                    "note_on" if is_on else "note_off",
+                    note=max(0, min(127, pitch)),
+                    velocity=max(1, min(127, velocity)) if is_on else 0,
+                    channel=channel,
+                    time=delta,
+                )
+            )
+            previous_tick = tick
+        track.append(mido.MetaMessage("end_of_track", time=0))
+        return track
 
     def _measure_to_abs_tick(
         self,

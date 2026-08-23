@@ -14,13 +14,15 @@ import {
   Tooltip,
   Avatar,
 } from "@mui/material";
-import MusicNoteIcon from "@mui/icons-material/MusicNote";
-import UploadIcon from "@mui/icons-material/UploadFile";
-import SchoolIcon from "@mui/icons-material/School";
-import SettingsIcon from "@mui/icons-material/Settings";
-import LogoutIcon from "@mui/icons-material/Logout";
-import MenuIcon from "@mui/icons-material/Menu";
-import CloseIcon from "@mui/icons-material/Close";
+import {
+  CloseIcon,
+  LogoutIcon,
+  MenuIcon,
+  MusicNoteIcon,
+  SchoolIcon,
+  SettingsIcon,
+  UploadFileIcon as UploadIcon,
+} from "../icons";
 import { useAuthStore } from "../store/auth";
 import { palette } from "../styles/tokens";
 
@@ -93,7 +95,7 @@ export default function Layout({ children }: LayoutProps): JSX.Element {
             className="text-[10px] font-medium"
             style={{ color: palette.textTertiary, letterSpacing: "0.02em" }}
           >
-            Guitar + Drums
+            MIDI → Playable Band Scores
           </span>
         </Box>
       </Box>

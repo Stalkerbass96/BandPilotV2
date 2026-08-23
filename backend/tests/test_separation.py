@@ -224,7 +224,6 @@ class TestAssignStream:
     def test_assign_lead_and_rhythm_within_segment(self) -> None:
         report = detect_separation(_riff_melody_measure())
         assert report.segments
-        segment = report.segments[0]
         assert assign_stream(_mk(40, 0.0, 0.25), report) == "rhythm"
         assert assign_stream(_mk(64, 0.0, 1.0), report) == "lead"
 

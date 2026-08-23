@@ -8,8 +8,6 @@ involvement.
 from __future__ import annotations
 
 from fretpilot.drum.drumkit import (
-    DrumKit,
-    STANDARD_5PC,
     detect_kit,
     map_pitch_to_piece,
 )

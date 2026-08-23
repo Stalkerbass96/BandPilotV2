@@ -4,6 +4,7 @@ Usage::
 
     python -m fretpilot.elearning evaluate --input-dir <gp_dir> --output report.json
     python -m fretpilot.elearning evaluate --input <single.gp5> --output report.json
+    python -m fretpilot.elearning roundtrip --input-dir <gp_dir> --output report.json
     python -m fretpilot.elearning learn --input-dir <gp_dir> --kb-root <knowledge_dir>
     python -m fretpilot.elearning kb list-versions [--kb-root <knowledge_dir>]
     python -m fretpilot.elearning kb rollback --version <version> [--kb-root <knowledge_dir>]
@@ -59,13 +60,60 @@ def cmd_evaluate(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_roundtrip(args: argparse.Namespace) -> int:
+    """Run the actual GP5 export/parse-back professional-score audit."""
+    if args.scope == "full-song":
+        from fretpilot.elearning.full_score_evaluate import (
+            FullSongRoundTripEvaluator,
+        )
+
+        evaluator = FullSongRoundTripEvaluator(
+            knowledge_dir=getattr(args, "knowledge_dir", None)
+        )
+    else:
+        from fretpilot.elearning.professional_evaluate import (
+            ProfessionalRoundTripEvaluator,
+        )
+
+        evaluator = ProfessionalRoundTripEvaluator(
+            knowledge_dir=getattr(args, "knowledge_dir", None)
+        )
+    if args.input:
+        report = evaluator.evaluate_file(
+            args.input,
+            generated_path=args.generated_output,
+        )
+        if isinstance(report, dict):
+            result = report
+            score = float(report["overall"]["professional_score_score"])
+        else:
+            result = report.to_dict()
+            score = report.metrics.professional_score_score
+    else:
+        result = evaluator.evaluate_dir(
+            args.input_dir,
+            output_path=args.output,
+            generated_dir=args.generated_dir,
+            max_files=args.max_files,
+        )
+        score = float(result["overall"].get("professional_score_score", 0.0))
+    if args.output and args.input:
+        destination = Path(args.output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(
+            json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
+    print(f"Professional score score: {score:.1%}")
+    return 0
+
+
 def cmd_learn(args: argparse.Namespace) -> int:
     """Run knowledge extraction + KB update."""
     from fretpilot.elearning.evaluate import BatchEvaluator
     from fretpilot.elearning.gp_reader import GPReader
-    from fretpilot.elearning.stats_extractor import StatsExtractor
-    from fretpilot.elearning.priors_deriver import PriorsDeriver
     from fretpilot.elearning.kb_writer import KBWriter
+    from fretpilot.elearning.priors_deriver import PriorsDeriver
+    from fretpilot.elearning.stats_extractor import StatsExtractor
 
     # 1. Parse all GP files
     reader = GPReader()
@@ -114,7 +162,7 @@ def cmd_learn(args: argparse.Namespace) -> int:
     # 5. Run evaluation with new priors
     print("\nRunning evaluation with empirical priors...")
     evaluator = BatchEvaluator(knowledge_dir=str(writer.version_dir(new_version)))
-    result = evaluator.evaluate_dir(
+    evaluator.evaluate_dir(
         args.input_dir,
         output_path=args.output,
         max_files=args.max_files,
@@ -157,7 +205,7 @@ def cmd_kb(args: argparse.Namespace) -> int:
         if not versions:
             print("No KB versions found.")
             return 0
-        active = writer._load_manifest().get("active_version", "")
+        active = writer.manifest().get("active_version", "")
         print(f"Active version: {active or '(none)'}")
         print(f"{'VERSION':22s} {'SOURCE':10s} {'STYLES':18s} {'SOURCES':>8s} {'AVG_CONF':>9s}")
         for v in versions:
@@ -209,6 +257,29 @@ def main(argv: list[str] | None = None) -> int:
     eval_parser.add_argument("--max-files", type=int, help="Limit files (for testing)")
     eval_parser.add_argument("--knowledge-dir", help="KB version directory override")
 
+    # actual serialized GP5 round-trip audit
+    roundtrip_parser = subparsers.add_parser(
+        "roundtrip", help="Run GP → MIDI → BandPilot → GP5 parse-back evaluation"
+    )
+    roundtrip_group = roundtrip_parser.add_mutually_exclusive_group(required=True)
+    roundtrip_group.add_argument("--input", help="Single GP3/GP4/GP5 file")
+    roundtrip_group.add_argument("--input-dir", help="Directory tree of GP files")
+    roundtrip_parser.add_argument("--output", help="JSON report destination")
+    roundtrip_parser.add_argument(
+        "--generated-output", help="Keep one generated GP5 for a single input"
+    )
+    roundtrip_parser.add_argument(
+        "--generated-dir", help="Keep generated GP5 files for a directory audit"
+    )
+    roundtrip_parser.add_argument("--max-files", type=int, help="Deterministic corpus sample")
+    roundtrip_parser.add_argument("--knowledge-dir", help="KB version directory override")
+    roundtrip_parser.add_argument(
+        "--scope",
+        choices=("full-song", "primary-guitar"),
+        default="full-song",
+        help="Evaluate every score track (default) or the legacy primary fretted track",
+    )
+
     # learn
     learn_parser = subparsers.add_parser("learn", help="Extract knowledge + update KB")
     learn_parser.add_argument("--input-dir", required=True, help="Directory of GP files")
@@ -240,6 +311,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "evaluate":
         return cmd_evaluate(args)
+    elif args.command == "roundtrip":
+        return cmd_roundtrip(args)
     elif args.command == "learn":
         return cmd_learn(args)
     elif args.command == "kb":

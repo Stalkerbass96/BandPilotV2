@@ -22,10 +22,14 @@ from __future__ import annotations
 import json
 import logging
 import shutil
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from filelock import FileLock
+
+from fretpilot.elearning.governance import CorpusGovernanceError, assess_promotion
 from fretpilot.elearning.models import DerivedPriors, EvaluationMetrics
 
 logger = logging.getLogger("fretpilot.elearning.kb_writer")
@@ -54,6 +58,23 @@ _DOMAIN_MERGE_TARGETS: dict[str, tuple[str, str]] = {
 }
 
 
+def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    """Write JSON through a sibling temp file and atomically replace the target."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, delete=False
+        ) as handle:
+            json.dump(data, handle, indent=2, ensure_ascii=False)
+            handle.write("\n")
+            temp_path = Path(handle.name)
+        temp_path.replace(path)
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
+
+
 def _stamp_snapshot_version(path: Path, version: str) -> None:
     """Rewrite an asset's ``snapshot_version`` field in place.
 
@@ -63,10 +84,7 @@ def _stamp_snapshot_version(path: Path, version: str) -> None:
     """
     data = json.loads(path.read_text(encoding="utf-8"))
     data["snapshot_version"] = version
-    path.write_text(
-        json.dumps(data, indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    _write_json_atomic(path, data)
 
 
 class KBWriter:
@@ -84,6 +102,7 @@ class KBWriter:
         self._versions_dir = self._root / "versions"
         self._versions_dir.mkdir(parents=True, exist_ok=True)
         self._manifest_path = self._root / _MANIFEST_FILENAME
+        self._lock = FileLock(str(self._root / ".kb.lock"), timeout=30)
 
     # ─── Write ───
 
@@ -91,7 +110,17 @@ class KBWriter:
         self,
         derived_priors: list[DerivedPriors],
         snapshot_version: str | None = None,
-        promote: bool = True,
+        promote: bool = False,
+    ) -> str:
+        """Write a new KB version under an inter-process lock."""
+        with self._lock:
+            return self._write_unlocked(derived_priors, snapshot_version, promote)
+
+    def _write_unlocked(
+        self,
+        derived_priors: list[DerivedPriors],
+        snapshot_version: str | None,
+        promote: bool,
     ) -> str:
         """Write a new KB version with empirical priors.
 
@@ -99,39 +128,65 @@ class KBWriter:
             derived_priors: List of derived priors to merge into the KB.
             snapshot_version: Optional version string (e.g. ``"2026.08.4"``).
                 When ``None``, a timestamp-based version is generated.
-            promote: If True (default), copy the new version to ``assets/``
+            promote: If True, copy the evaluated version to ``assets/``
                 (the active version used by the pipeline).
 
         Returns:
             The snapshot version string of the newly written version.
         """
         if snapshot_version is None:
-            snapshot_version = datetime.now(timezone.utc).strftime("%Y.%m.%d-%H%M%S")
+            snapshot_version = datetime.now(timezone.utc).strftime("%Y.%m.%d-%H%M%S-%f")
 
-        version_dir = self._versions_dir / snapshot_version
-        if version_dir.exists():
+        final_version_dir = self._versions_dir / snapshot_version
+        if final_version_dir.exists():
             raise ValueError(
-                f"Version directory already exists: {version_dir}. "
+                f"Version directory already exists: {final_version_dir}. "
                 "Use a different snapshot_version or remove the existing one."
             )
-        version_dir.mkdir(parents=True, exist_ok=False)
+        version_dir = Path(
+            tempfile.mkdtemp(prefix=f".{snapshot_version}.build-", dir=self._versions_dir)
+        )
 
-        # 1. Copy all KB assets from the active assets directory, re-stamping
-        #    every domain file with the new snapshot version so the version
-        #    directory is internally consistent (KnowledgeRegistry requires
-        #    all assets in a snapshot to share the same snapshot_version).
+        try:
+            self._build_snapshot(version_dir, snapshot_version, derived_priors)
+        except Exception:
+            shutil.rmtree(version_dir, ignore_errors=True)
+            raise
+
+        # Publish the complete immutable snapshot in one rename. A failed build
+        # never exposes a half-written version directory to readers.
+        version_dir.replace(final_version_dir)
+
+        # Promote only after the full snapshot is visible, then update the
+        # manifest so it never points at an incomplete directory.
+        if promote:
+            self._activate_version(snapshot_version)
+        self._update_manifest(snapshot_version, derived_priors, activate=promote)
+
+        logger.info(
+            "Wrote KB version %s with %d derived priors",
+            snapshot_version, len(derived_priors),
+        )
+        return snapshot_version
+
+    # ─── Version directory helpers ───
+
+    def _build_snapshot(
+        self,
+        version_dir: Path,
+        snapshot_version: str,
+        derived_priors: list[DerivedPriors],
+    ) -> None:
+        """Build and validate a snapshot in a private staging directory."""
         for filename in _KB_DOMAIN_FILES:
-            src = self._assets_dir / filename
-            dst = version_dir / filename
-            if src.exists():
-                shutil.copy2(src, dst)
-                _stamp_snapshot_version(dst, snapshot_version)
+            source = self._assets_dir / filename
+            destination = version_dir / filename
+            if source.exists():
+                shutil.copy2(source, destination)
+                _stamp_snapshot_version(destination, snapshot_version)
             else:
-                logger.debug("Source asset missing: %s", src)
+                logger.debug("Source asset missing: %s", source)
 
-        # 2–4. Merge derived priors into their target domain files.
-        #      Guitar priors target kb2_performance.json, drum priors target
-        #      drum_kb2_sticking.json (see _DOMAIN_MERGE_TARGETS).
         by_domain: dict[str, list[DerivedPriors]] = {}
         for prior in derived_priors:
             by_domain.setdefault(prior.domain, []).append(prior)
@@ -139,8 +194,11 @@ class KBWriter:
         for domain, domain_priors in by_domain.items():
             target = _DOMAIN_MERGE_TARGETS.get(domain)
             if target is None:
-                logger.warning("Unknown priors domain %r; skipping %d priors",
-                               domain, len(domain_priors))
+                logger.warning(
+                    "Unknown priors domain %r; skipping %d priors",
+                    domain,
+                    len(domain_priors),
+                )
                 continue
             filename, new_entry_kind = target
             self._merge_domain_file(
@@ -150,21 +208,6 @@ class KBWriter:
                 domain_priors,
                 new_entry_kind,
             )
-
-        # 5. Update version manifest.
-        self._update_manifest(snapshot_version, derived_priors)
-
-        # 6. Promote to active assets directory.
-        if promote:
-            self._activate_version(snapshot_version)
-
-        logger.info(
-            "Wrote KB version %s with %d derived priors",
-            snapshot_version, len(derived_priors),
-        )
-        return snapshot_version
-
-    # ─── Version directory helpers ───
 
     def version_dir(self, version: str) -> Path:
         """Return the directory path for a specific version."""
@@ -185,6 +228,29 @@ class KBWriter:
             v = dict(v)  # shallow copy so we don't mutate the manifest
             v["styles_present"] = self._compute_styles_present(v.get("version", ""))
             result.append(v)
+        return result
+
+    def manifest(self) -> dict[str, Any]:
+        """Return a copy of version metadata for API and CLI consumers."""
+        return dict(self._load_manifest())
+
+    def source_ids(self, version: str) -> set[str]:
+        """Return provenance source IDs recorded across a snapshot's domains."""
+
+        version_dir = self._versions_dir / version
+        if not version_dir.is_dir():
+            raise FileNotFoundError(f"KB version not found: {version}")
+        result: set[str] = set()
+        for filename in _KB_DOMAIN_FILES:
+            path = version_dir / filename
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            for entry in data.get("entries", []):
+                result.update(
+                    str(source_id)
+                    for source_id in entry.get("provenance", {}).get("source_ids", [])
+                )
         return result
 
     def _compute_styles_present(self, version: str) -> list[str]:
@@ -233,19 +299,79 @@ class KBWriter:
         Args:
             target_version: The version to roll back to.
         """
+        with self._lock:
+            self._rollback_unlocked(target_version)
+
+    def record_evaluation(self, version: str, comparison: dict[str, Any]) -> None:
+        """Persist server-produced A/B evidence for a candidate snapshot."""
+
+        with self._lock:
+            manifest = self._load_manifest()
+            entry = next(
+                (item for item in manifest.get("versions", []) if item.get("version") == version),
+                None,
+            )
+            if entry is None:
+                raise FileNotFoundError(f"KB version not found: {version}")
+            entry["evaluation"] = comparison
+            entry["status"] = "evaluated"
+            self._save_manifest(manifest)
+
+    def promote_evaluated(self, version: str) -> None:
+        """Activate a candidate only when its recorded A/B evidence passes."""
+
+        with self._lock:
+            manifest = self._load_manifest()
+            entry = next(
+                (item for item in manifest.get("versions", []) if item.get("version") == version),
+                None,
+            )
+            if entry is None:
+                raise FileNotFoundError(f"KB version not found: {version}")
+            comparison = entry.get("evaluation")
+            if not isinstance(comparison, dict):
+                raise CorpusGovernanceError("Candidate has no recorded A/B evaluation.")
+            assessment = assess_promotion(
+                source_count=int(entry.get("total_sources", 0)),
+                comparison=comparison,
+            )
+            if not assessment.passed:
+                raise CorpusGovernanceError("; ".join(assessment.reasons))
+            self._activate_version(version)
+            entry["status"] = "promoted"
+            entry["promoted_at"] = datetime.now(timezone.utc).isoformat()
+            manifest["active_version"] = version
+            manifest["last_updated"] = entry["promoted_at"]
+            self._save_manifest(manifest)
+
+    def _rollback_unlocked(self, target_version: str) -> None:
+        """Activate an existing immutable version while holding the writer lock."""
         vdir = self._versions_dir / target_version
         if not vdir.exists():
             raise FileNotFoundError(f"KB version not found: {target_version}")
+
+        manifest = self._load_manifest()
+        entry = next(
+            (
+                item
+                for item in manifest.get("versions", [])
+                if item.get("version") == target_version
+            ),
+            None,
+        )
+        if entry is not None and entry.get("status") in {"candidate", "evaluated"}:
+            raise CorpusGovernanceError(
+                "Candidate snapshots cannot bypass the evaluation promotion gate via rollback."
+            )
 
         self._assets_dir.mkdir(parents=True, exist_ok=True)
         for filename in _KB_DOMAIN_FILES:
             src = vdir / filename
             dst = self._assets_dir / filename
             if src.exists():
-                shutil.copy2(src, dst)
+                self._copy_atomic(src, dst)
 
         # Update manifest to mark the active version.
-        manifest = self._load_manifest()
         manifest["active_version"] = target_version
         self._save_manifest(manifest)
 
@@ -349,6 +475,7 @@ class KBWriter:
                             f"Derived from {len(prior.source_ids)} ground truth tabs "
                             f"via {prior.derivation_method}"
                         ),
+                        "governance": dict(prior.governance),
                     }
                     entry["evaluation"] = {
                         "status": "evaluated",
@@ -377,6 +504,7 @@ class KBWriter:
                             f"Derived from {len(prior.source_ids)} ground truth tabs "
                             f"via {prior.derivation_method}"
                         ),
+                        "governance": dict(prior.governance),
                     },
                     "evaluation": {
                         "status": "evaluated",
@@ -386,10 +514,7 @@ class KBWriter:
                 })
 
         data["entries"] = entries
-        path.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        _write_json_atomic(path, data)
 
     def _load_version_kb2(self, version: str) -> dict[str, Any]:
         """Load the kb2_performance.json from a version directory."""
@@ -404,6 +529,8 @@ class KBWriter:
         self,
         version: str,
         derived_priors: list[DerivedPriors],
+        *,
+        activate: bool,
     ) -> None:
         """Add a new version entry to the manifest."""
         manifest = self._load_manifest()
@@ -420,10 +547,12 @@ class KBWriter:
                 if derived_priors else 0.0
             ),
             "method": "statistical_mapping",
+            "status": "promoted" if activate else "candidate",
         }
 
         manifest.setdefault("versions", []).append(entry)
-        manifest["active_version"] = version
+        if activate:
+            manifest["active_version"] = version
         manifest["last_updated"] = entry["timestamp"]
 
         self._save_manifest(manifest)
@@ -436,7 +565,19 @@ class KBWriter:
             src = version_dir / filename
             dst = self._assets_dir / filename
             if src.exists():
-                shutil.copy2(src, dst)
+                self._copy_atomic(src, dst)
+
+    @staticmethod
+    def _copy_atomic(src: Path, dst: Path) -> None:
+        """Copy a file without exposing a partially-written active asset."""
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=dst.parent, delete=False) as handle:
+            temp_path = Path(handle.name)
+        try:
+            shutil.copy2(src, temp_path)
+            temp_path.replace(dst)
+        finally:
+            temp_path.unlink(missing_ok=True)
 
     def _load_manifest(self) -> dict[str, Any]:
         """Load the version manifest, creating it if absent."""
@@ -447,10 +588,7 @@ class KBWriter:
     def _save_manifest(self, manifest: dict[str, Any]) -> None:
         """Save the version manifest."""
         self._manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        self._manifest_path.write_text(
-            json.dumps(manifest, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        _write_json_atomic(self._manifest_path, manifest)
 
 
 class ABComparator:

@@ -11,8 +11,17 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fretpilot.ir.drum_models import (
+    SCHEMA_VERSION as DRUM_SCHEMA_VERSION,
+)
+from fretpilot.ir.drum_models import (
+    DrumHitLocation,
+    DrumMeasure,
+    DrumNoteEvent,
+    DrumProjectIR,
+    DrumTrackIR,
+)
 from fretpilot.ir.models import (
-    SCHEMA_VERSION,
     GuitarMeasure,
     GuitarNoteEvent,
     GuitarProjectIR,
@@ -26,14 +35,6 @@ from fretpilot.ir.models import (
     PerformanceTiming,
     ScoreTiming,
     Transformation,
-)
-from fretpilot.ir.drum_models import (
-    SCHEMA_VERSION as DRUM_SCHEMA_VERSION,
-    DrumHitLocation,
-    DrumMeasure,
-    DrumNoteEvent,
-    DrumProjectIR,
-    DrumTrackIR,
 )
 
 

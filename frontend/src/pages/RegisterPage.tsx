@@ -13,11 +13,12 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import MusicNoteIcon from "@mui/icons-material/MusicNote";
+import { MusicNoteIcon } from "../icons";
 import { motion } from "framer-motion";
 import { authApi } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import { palette } from "../styles/tokens";
+import { apiErrorMessage } from "../utils/apiError";
 
 export default function RegisterPage(): JSX.Element {
   const navigate = useNavigate();
@@ -41,8 +42,8 @@ export default function RegisterPage(): JSX.Element {
       const result = await authApi.register(email, password);
       setAuth(result.token, result.user);
       navigate("/");
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "Account registration failed."));
     } finally {
       setLoading(false);
     }
@@ -94,7 +95,7 @@ export default function RegisterPage(): JSX.Element {
               variant="body2"
               sx={{ color: palette.textSecondary, mt: 0.5 }}
             >
-              Start repairing guitar MIDI files
+              Start building playable scores from full-band MIDI
             </Typography>
           </Box>
 

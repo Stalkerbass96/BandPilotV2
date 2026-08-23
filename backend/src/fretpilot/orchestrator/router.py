@@ -13,13 +13,13 @@ from typing import TYPE_CHECKING, Any
 
 from fretpilot.ir.drum_models import DrumProjectIR
 from fretpilot.ir.models import GuitarProjectIR, Transformation
+from fretpilot.ir.pitched_models import PitchedProjectIR
 from fretpilot.midi.models import NormalizedTimeline, NormalizedTrack
-
 from fretpilot.orchestrator.detector import InstrumentFamily
 
 if TYPE_CHECKING:
-    from fretpilot.engine.pipeline import RepairPipeline
     from fretpilot.engine.drum_pipeline import DrumRepairPipeline
+    from fretpilot.engine.pipeline import RepairPipeline
 
 logger = logging.getLogger("fretpilot.orchestrator.router")
 
@@ -41,6 +41,7 @@ class RouteResult:
         warnings: Non-fatal warnings from the pipeline.
         drum_report: Extra drum-specific report data (if applicable).
         skipped: True if the track was passed through unchanged.
+        failed: True if the selected pipeline raised an error.
     """
 
     track_index: int
@@ -48,15 +49,19 @@ class RouteResult:
     module: str
     guitar_ir: GuitarProjectIR | None = None
     drum_ir: DrumProjectIR | None = None
+    pitched_ir: PitchedProjectIR | None = None
     changes: list[Transformation] = field(default_factory=list)
     stages_completed: int = 0
     note_count: int = 0
     warnings: list[str] = field(default_factory=list)
     drum_report: dict[str, Any] = field(default_factory=dict)
+    separation: Any | None = None
     skipped: bool = False
+    failed: bool = False
+    error: str | None = None
 
 
-def _route_guitar(
+def route_guitar(
     track: NormalizedTrack,
     timeline: NormalizedTimeline,
     guitar_pipeline: RepairPipeline,
@@ -72,6 +77,8 @@ def _route_guitar(
     tuning = settings.get("tuning", None)
     advisor = settings.get("advisor", None)
     degraded_mode = settings.get("degraded_mode", False)
+    rewrite_decisions = settings.get("rewrite_decisions", [])
+    initial_transformations = settings.get("initial_transformations", [])
 
     ctx = PipelineContext(
         timeline=timeline,
@@ -84,7 +91,10 @@ def _route_guitar(
         source_track_index=track.index,
         degraded_mode=degraded_mode,
         tuning=tuning,
+        track_id=settings.get("track_id", f"guitar-{track.index}"),
+        rewrite_decisions=list(rewrite_decisions),
     )
+    ctx.transformations.extend(initial_transformations)
 
     ir = guitar_pipeline.execute(ctx)
     stages_completed = sum(1 for v in ctx.stage_progress.values() if v)
@@ -98,10 +108,11 @@ def _route_guitar(
         stages_completed=stages_completed,
         note_count=len(track.notes),
         warnings=list(ctx.warnings),
+        separation=ctx.separation,
     )
 
 
-def _route_drums(
+def route_drums(
     track: NormalizedTrack,
     timeline: NormalizedTimeline,
     drum_pipeline: DrumRepairPipeline,
@@ -120,6 +131,7 @@ def _route_drums(
         knowledge=knowledge,
         style_label=style_label,
         midi_fidelity=midi_fidelity,
+        track_id=settings.get("track_id", f"drum-{track.index}"),
         source_track_index=track.index,
     )
 
@@ -133,13 +145,26 @@ def _route_drums(
         "patterns": [],
         "sticking_suggested": stages_completed >= 6,
         "velocity_normalized": stages_completed >= 5,
+        "piece_stats": [],
     }
     if ir.tracks:
         drum_track = ir.tracks[0]
         drum_report["kit_type"] = drum_track.kit
         drum_report["style_detected"] = drum_track.style
-        drum_report["patterns"] = [
-            m.pattern for m in drum_track.measures
+        drum_report["patterns"] = [m.pattern for m in drum_track.measures]
+        piece_velocities: dict[str, list[int]] = {}
+        for measure in drum_track.measures:
+            for event in measure.events:
+                piece_velocities.setdefault(event.piece, []).append(
+                    event.performance.velocity
+                )
+        drum_report["piece_stats"] = [
+            {
+                "name": piece,
+                "hit_count": len(velocities),
+                "avg_velocity": round(sum(velocities) / len(velocities), 1),
+            }
+            for piece, velocities in sorted(piece_velocities.items())
         ]
 
     return RouteResult(
@@ -155,7 +180,7 @@ def _route_drums(
     )
 
 
-def _passthrough(
+def route_passthrough(
     track: NormalizedTrack,
     family: InstrumentFamily,
 ) -> RouteResult:
@@ -166,8 +191,42 @@ def _passthrough(
         module="passthrough",
         stages_completed=0,
         note_count=len(track.notes),
-        warnings=[f"No pipeline for instrument family '{family.value}' — passed through"],
+        warnings=[
+            f"No repair pipeline for instrument family '{family.value}'; "
+            "the source track is retained as passthrough metadata but omitted from notation exports"
+        ],
         skipped=True,
+    )
+
+
+def route_pitched(
+    track: NormalizedTrack,
+    timeline: NormalizedTimeline,
+    family: InstrumentFamily,
+    pipeline: Any,
+    knowledge: Any,
+    settings: dict[str, Any],
+) -> RouteResult:
+    """Route bass, keys, or generic tracks to a dedicated pitched plugin."""
+    ir = pipeline.execute(
+        track=track,
+        timeline=timeline,
+        registry=knowledge,
+        settings=settings,
+    )
+    return RouteResult(
+        track_index=track.index,
+        family=family,
+        module={
+            InstrumentFamily.BASS: "basspilot",
+            InstrumentFamily.KEYS: "keyspilot",
+            InstrumentFamily.UNKNOWN: "genericpilot",
+        }[family],
+        pitched_ir=ir,
+        changes=list(ir.changes),
+        stages_completed=len(pipeline.stages),
+        note_count=len(track.notes),
+        warnings=list(ir.warnings),
     )
 
 
@@ -200,15 +259,22 @@ def route_track(
     if family == InstrumentFamily.GUITAR:
         if guitar_pipeline is None:
             raise RuntimeError("Guitar pipeline required but not provided")
-        return _route_guitar(track, timeline, guitar_pipeline, knowledge, settings)
+        return route_guitar(track, timeline, guitar_pipeline, knowledge, settings)
 
     if family == InstrumentFamily.DRUMS:
         if drum_pipeline is None:
             raise RuntimeError("Drum pipeline required but not provided")
-        return _route_drums(track, timeline, drum_pipeline, knowledge, settings)
+        return route_drums(track, timeline, drum_pipeline, knowledge, settings)
 
     # Bass, keys, unknown — passthrough.
-    return _passthrough(track, family)
+    return route_passthrough(track, family)
 
 
-__all__ = ["RouteResult", "route_track"]
+__all__ = [
+    "RouteResult",
+    "route_drums",
+    "route_guitar",
+    "route_passthrough",
+    "route_pitched",
+    "route_track",
+]

@@ -5,10 +5,7 @@
  */
 
 import { Box, Chip, Typography } from "@mui/material";
-import DeleteIcon from "@mui/icons-material/Delete";
-import SwapVertIcon from "@mui/icons-material/SwapVert";
-import SummarizeIcon from "@mui/icons-material/Summarize";
-import BoltIcon from "@mui/icons-material/Bolt";
+import { BoltIcon, DeleteIcon, SummarizeIcon, SwapVertIcon } from "../icons";
 import { motion } from "framer-motion";
 import type { RewriteInfo } from "../api/types";
 import { palette } from "../styles/tokens";

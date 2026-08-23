@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import json
 import logging
-import tempfile
 import os
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,7 +23,6 @@ from fretpilot.elearning.models import (
 )
 from fretpilot.elearning.note_aligner import NoteAligner
 from fretpilot.elearning.pipeline_runner import PipelineRunner
-from fretpilot.elearning.style_mapper import map_directory_to_style
 
 logger = logging.getLogger("fretpilot.elearning.evaluate")
 
@@ -163,19 +162,21 @@ class BatchEvaluator:
             return EvaluationMetrics.empty()
 
         # Weighted average
-        w = lambda metric: sum(
-            getattr(r.metrics, metric) * r.metrics.total_aligned for r in reports
-        ) / total_aligned
+        def weighted(metric: str) -> float:
+            return sum(
+                getattr(report.metrics, metric) * report.metrics.total_aligned
+                for report in reports
+            ) / total_aligned
 
         return EvaluationMetrics(
-            string_match_rate=w("string_match_rate"),
-            fret_match_rate=w("fret_match_rate"),
-            position_deviation=w("position_deviation"),
-            chord_shape_match=w("chord_shape_match"),
-            overall_fingering_accuracy=w("overall_fingering_accuracy"),
-            pitch_accuracy=w("pitch_accuracy"),
+            string_match_rate=weighted("string_match_rate"),
+            fret_match_rate=weighted("fret_match_rate"),
+            position_deviation=weighted("position_deviation"),
+            chord_shape_match=weighted("chord_shape_match"),
+            overall_fingering_accuracy=weighted("overall_fingering_accuracy"),
+            pitch_accuracy=weighted("pitch_accuracy"),
             note_count_match=total_ir / total_gt if total_gt else 0.0,
-            measure_alignment_rate=w("measure_alignment_rate"),
+            measure_alignment_rate=weighted("measure_alignment_rate"),
             total_aligned=total_aligned,
             total_gt_notes=total_gt,
             total_ir_notes=total_ir,

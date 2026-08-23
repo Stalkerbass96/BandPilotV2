@@ -5,11 +5,9 @@ import pytest
 from fretpilot.elearning.models import (
     GroundTruthNote,
     GroundTruthTab,
-    StyleStats,
-    DerivedPriors,
 )
-from fretpilot.elearning.stats_extractor import StatsExtractor
 from fretpilot.elearning.priors_deriver import PriorsDeriver
+from fretpilot.elearning.stats_extractor import StatsExtractor
 
 
 def _make_tab(style, notes):

@@ -14,8 +14,7 @@ from fretpilot.engine.context import FingeredNote, PipelineContext, VoicedNote
 from fretpilot.engine.stages.fingering import FingeringStage, _score_candidate
 from fretpilot.guitar.fretboard import FretPosition
 from fretpilot.guitar.instrument import STANDARD_TUNING
-from fretpilot.midi.models import NormalizedNote, NormalizedTrack
-
+from fretpilot.midi.models import NormalizedTrack
 from tests.conftest import _note, _timeline
 
 

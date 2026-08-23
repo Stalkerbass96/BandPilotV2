@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *$py.class
 .pytest_cache/
+.coverage
+htmlcov/
 .venv/
 venv/
 env/
@@ -22,8 +24,10 @@ env/
 
 # ─── 上传 / 导出数据 ───
 job_root/
+knowledge_store/
 uploads/
 exports/
+evaluation_results/
 
 # ─── Node / 前端 ───
 node_modules/

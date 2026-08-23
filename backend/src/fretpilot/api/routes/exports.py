@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -17,14 +18,17 @@ from fretpilot.db.session import get_db
 from fretpilot.exporters.ample_midi.profile import load_profile
 from fretpilot.exporters.ample_midi.renderer import AmpleMidiExporter
 from fretpilot.exporters.gp5 import GP5Exporter, export_bandpilot
+from fretpilot.exporters.registry import SongExporterRegistry
 from fretpilot.ir.serde import load_ir, load_merged_irs
+from fretpilot.ir.song_serde import load_song_ir
+from fretpilot.validation import ScoreValidationError
 
 logger = logging.getLogger("fretpilot.api.exports")
 router = APIRouter()
 
 
 class ExportRequest(BaseModel):
-    format: str  # "gp5" or "ample_midi"
+    format: str
 
 
 class ExportResponse(BaseModel):
@@ -99,20 +103,58 @@ def export_project(
     """Export the repaired project to the requested format."""
     project = _get_user_project(db, user, project_id)
     project_dir = _project_dir(user, project_id)
+    song_path = project_dir / "song_ir.json"
     ir_path = project_dir / "ir.json"
     merged_path = project_dir / "ir_merged.json"
-    if not ir_path.exists() and not merged_path.exists():
+    if not song_path.exists() and not ir_path.exists() and not merged_path.exists():
         raise HTTPException(400, "No repair result found. Run repair first.")
 
     exports_dir = project_dir / "exports"
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    if req.format == "gp5":
-        out_path, note_count, measure_count = _export_gp5(project_dir, exports_dir)
-    elif req.format == "ample_midi":
-        out_path, note_count, measure_count = _export_ample(project_dir, exports_dir)
+    if song_path.exists():
+        aliases = {"ample_midi": "ample_eclipse_midi"}
+        canonical_format = aliases.get(req.format, req.format)
+        file_shapes = {
+            "gp5": ("score", ".gp5"),
+            "musicxml": ("score", ".musicxml"),
+            "humanized_midi": ("humanized-band", ".mid"),
+            "ample_eclipse_midi": ("ample-eclipse", ".mid"),
+            "humanized_ample_eclipse_midi": ("humanized-ample-eclipse", ".mid"),
+        }
+        file_shape = file_shapes.get(canonical_format)
+        if file_shape is None:
+            raise HTTPException(400, f"Unsupported format: {req.format}")
+        stem, suffix = file_shape
+        filename = f"{stem}-{uuid4().hex[:12]}{suffix}"
+        out_path = exports_dir / filename
+        try:
+            result = SongExporterRegistry.default().export(
+                canonical_format, load_song_ir(song_path), out_path
+            )
+        except ScoreValidationError as exc:
+            raise HTTPException(
+                422,
+                {
+                    "message": "Score failed professional playability validation",
+                    "issues": [
+                        {
+                            "code": issue.code,
+                            "message": issue.message,
+                            "track_id": issue.track_id,
+                            "note_ids": issue.note_ids,
+                        }
+                        for issue in exc.issues
+                    ],
+                },
+            ) from exc
+        note_count, measure_count = result.note_count, result.measure_count
     else:
-        raise HTTPException(400, f"Unsupported format: {req.format}")
+        legacy_exporters = {"gp5": _export_gp5, "ample_midi": _export_ample}
+        exporter = legacy_exporters.get(req.format)
+        if exporter is None:
+            raise HTTPException(400, f"Unsupported format: {req.format}")
+        out_path, note_count, measure_count = exporter(project_dir, exports_dir)
 
     record = ExportRecord(
         project_id=project.id,
@@ -172,6 +214,13 @@ def download_export(
     media_type = "application/octet-stream"
     if record.format_id == "gp5":
         media_type = "application/octet-stream"
-    elif record.format_id == "ample_midi":
+    elif record.format_id in {
+        "ample_midi",
+        "ample_eclipse_midi",
+        "humanized_midi",
+        "humanized_ample_eclipse_midi",
+    }:
         media_type = "audio/midi"
+    elif record.format_id == "musicxml":
+        media_type = "application/vnd.recordare.musicxml+xml"
     return FileResponse(path, media_type=media_type, filename=path.name)

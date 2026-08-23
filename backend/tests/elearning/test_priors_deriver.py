@@ -7,11 +7,8 @@ appropriate confidence values.
 
 from __future__ import annotations
 
-import pytest
-
-from fretpilot.elearning.models import DerivedPriors, StyleStats
+from fretpilot.elearning.models import StyleStats
 from fretpilot.elearning.priors_deriver import PriorsDeriver
-
 
 # ─── Helpers ───
 

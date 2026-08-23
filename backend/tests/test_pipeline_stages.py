@@ -18,8 +18,7 @@ from fretpilot.engine.stages import (
 )
 from fretpilot.knowledge.engine import KnowledgeEngine
 from fretpilot.midi.models import NormalizedTrack
-
-from tests.conftest import _note, _timeline, _MockAdvisor
+from tests.conftest import _MockAdvisor, _note, _timeline
 
 
 def _build_ctx(
@@ -37,8 +36,8 @@ def _build_ctx(
         ]
     timeline = _timeline(notes)
     if engine is None:
-        from fretpilot.knowledge.registry import KnowledgeRegistry
         from fretpilot.config import get_settings
+        from fretpilot.knowledge.registry import KnowledgeRegistry
 
         registry = KnowledgeRegistry.from_assets_dir(get_settings().assets_dir)
         engine = KnowledgeEngine(registry)
@@ -285,6 +284,33 @@ class TestFingeringStage:
         VoiceStage().run(ctx)
         FingeringStage(engine).run(ctx)
         assert ctx.stage_progress.get("fingering") is True
+
+    def test_impossible_chord_does_not_poison_later_legal_chord(
+        self, engine: KnowledgeEngine
+    ) -> None:
+        notes = [
+            *[
+                _note(pitch=pitch, start_beat=0.0, duration_beats=0.5)
+                for pitch in (40, 45, 50, 55, 59, 64, 67)
+            ],
+            *[
+                _note(pitch=pitch, start_beat=1.0, duration_beats=0.5)
+                for pitch in (52, 57, 64)
+            ],
+        ]
+        ctx = _build_ctx(notes=notes, engine=engine)
+        QuantizeStage(engine).run(ctx)
+        MeasureSplitStage().run(ctx)
+        TieStage().run(ctx)
+        VoiceStage().run(ctx)
+        FingeringStage(engine).run(ctx)
+
+        impossible = [note for note in ctx.fingered_notes if note.start_beat == 0.0]
+        legal = [note for note in ctx.fingered_notes if note.start_beat == 1.0]
+        assert all(note.string is None and note.fret is None for note in impossible)
+        assert all(note.string is not None and note.fret is not None for note in legal)
+        assert len({note.string for note in legal}) == len(legal)
+        assert any("only those groups were marked unplayable" in warning for warning in ctx.warnings)
 
 
 class TestArticulationStage:

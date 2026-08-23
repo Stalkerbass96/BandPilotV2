@@ -7,7 +7,6 @@ invariants (not exact values) so the test is robust against tuning adjustments.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import mido
@@ -128,7 +127,7 @@ class TestGoldenRoundTrip:
 
     def test_ir_roundtrip_preserves_structure(self, golden_ir: GuitarProjectIR, tmp_path: Path) -> None:
         """Save and reload the IR — structure must be preserved."""
-        from fretpilot.ir.serde import ir_to_dict, load_ir, save_ir
+        from fretpilot.ir.serde import load_ir, save_ir
 
         path = tmp_path / "golden_ir.json"
         save_ir(golden_ir, path)

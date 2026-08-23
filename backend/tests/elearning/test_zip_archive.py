@@ -8,10 +8,13 @@ became ``unknown``).  These tests lock in the decoding fix.
 
 from __future__ import annotations
 
+import stat
 import struct
-import zlib
 import zipfile
+import zlib
 from pathlib import Path
+
+import pytest
 
 from fretpilot.api.routes.elearning import _decode_zip_name, _extract_archive
 
@@ -151,3 +154,33 @@ def test_extract_archive_blocks_path_traversal(tmp_path: Path) -> None:
 
     assert files == []
     assert not (tmp_path / "evil.gp5").exists()
+
+
+def test_extract_archive_skips_symlinks(tmp_path: Path) -> None:
+    zip_path = tmp_path / "symlink.zip"
+    info = zipfile.ZipInfo("linked.gp5")
+    info.create_system = 3
+    info.external_attr = (stat.S_IFLNK | 0o777) << 16
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr(info, "../outside.gp5")
+
+    destination = tmp_path / "out"
+    destination.mkdir()
+    assert _extract_archive(zip_path, destination) == []
+    assert not (destination / "linked.gp5").exists()
+
+
+def test_extract_archive_rejects_excessive_compression_ratio(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from fretpilot.api.routes import elearning
+
+    zip_path = tmp_path / "compressed.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("large.gp5", b"A" * 100_000)
+    monkeypatch.setattr(elearning, "_MAX_COMPRESSION_RATIO", 2)
+
+    destination = tmp_path / "out"
+    destination.mkdir()
+    with pytest.raises(OSError, match="compression ratio"):
+        _extract_archive(zip_path, destination)

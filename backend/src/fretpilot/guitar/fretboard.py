@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fretpilot.guitar.instrument import GuitarTuning, STANDARD_TUNING
+from fretpilot.guitar.instrument import STANDARD_TUNING, GuitarTuning
 
 
 @dataclass(frozen=True, slots=True)

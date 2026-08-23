@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
-from typing import Any
 
 from fretpilot.elearning.drum_models import (
     DrumGroundTruthNote,

@@ -1,0 +1,32 @@
+{
+  "snapshot_version": "2026.08.18-123416",
+  "schema_version": "1",
+  "status": "approved",
+  "entries": [
+    {
+      "knowledge_id": "keys-kb2-professional-default-v1",
+      "domain": "keys_kb2_performance",
+      "kind": "hand_fingering_priors",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.23",
+      "status": "approved",
+      "payload": {
+        "default_split_pitch": 60,
+        "maximum_hand_notes": 5,
+        "maximum_hand_span_semitones": 12,
+        "hand_balance_weight": 0.25
+      },
+      "scope": {},
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": ["bandpilot-professional-keys-policy-v1"],
+        "notes": "Conservative keyboard hand-allocation rules; fingering remains deterministic and independently validated."
+      },
+      "evaluation": {
+        "status": "approved",
+        "confidence": 0.8,
+        "tested_against": ["phase4-keys-regression-v1"]
+      }
+    }
+  ]
+}

@@ -3,12 +3,15 @@
 import tempfile
 from pathlib import Path
 
-import pytest
 from mido import MidiFile
 
-from fretpilot.elearning.gp_reader import GPReader
 from fretpilot.elearning.gp_to_midi import GPMidiConverter
-from fretpilot.elearning.models import GroundTruthNote, GroundTruthTab
+from fretpilot.elearning.models import (
+    GroundTruthNote,
+    GroundTruthTab,
+    GroundTruthTrack,
+    ProfessionalScoreCorpus,
+)
 
 
 def _make_test_tab() -> GroundTruthTab:
@@ -113,3 +116,68 @@ def test_tie_notes_skipped():
                 if msg.type == "note_on" and msg.velocity > 0]
     assert len(note_ons) == 1  # Only the non-tie note
     Path(tmp.name).unlink(missing_ok=True)
+
+
+def test_convert_corpus_preserves_physical_tracks_and_drum_channel(tmp_path) -> None:
+    guitar_note = GroundTruthNote(
+        1, 0.0, 64, 1, 0, 1, 1.0, False, 95, absolute_start_beat=0.0
+    )
+    drum_note = GroundTruthNote(
+        1, 0.0, 38, 1, 38, 1, 0.25, False, 100, absolute_start_beat=0.0
+    )
+    corpus = ProfessionalScoreCorpus(
+        file_path="band.gp5",
+        title="Band",
+        artist="",
+        style_label="rock",
+        tempo_map=[{"beat": 0.0, "bpm": 128.0}],
+        time_signature_map=[
+            {"beat": 0.0, "numerator": 4, "denominator": 4},
+            {"beat": 4.0, "numerator": 3, "denominator": 4},
+        ],
+        tracks=[
+            GroundTruthTrack(
+                id="track-1",
+                name="Lead Guitar’s",
+                program=30,
+                is_percussion=False,
+                tuning_pitches=[40, 45, 50, 55, 59, 64],
+                capo=0,
+                notes=[guitar_note],
+            ),
+            GroundTruthTrack(
+                id="track-2",
+                name="Drums",
+                program=0,
+                is_percussion=True,
+                tuning_pitches=[0] * 6,
+                capo=0,
+                notes=[drum_note],
+            ),
+        ],
+    )
+
+    midi_path = GPMidiConverter().convert_corpus(corpus, tmp_path / "band.mid")
+    midi = MidiFile(midi_path)
+
+    assert len(midi.tracks) == 3
+    assert [message.name for message in midi.tracks[1] if message.type == "track_name"] == [
+        "Lead Guitar's"
+    ]
+    guitar_on = next(
+        message
+        for message in midi.tracks[1]
+        if message.type == "note_on" and message.velocity > 0
+    )
+    drum_on = next(
+        message
+        for message in midi.tracks[2]
+        if message.type == "note_on" and message.velocity > 0
+    )
+    assert guitar_on.channel == 0
+    assert drum_on.channel == 9
+    assert [
+        (message.numerator, message.denominator)
+        for message in midi.tracks[0]
+        if message.type == "time_signature"
+    ] == [(4, 4), (3, 4)]

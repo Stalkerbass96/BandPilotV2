@@ -95,6 +95,14 @@ class PriorsDeriver:
                 # Empirical chord shape patterns (top-K by frequency).
                 "chord_shapes": dict(list(stats.chord_shape_top_k.items())[:5]),
             }
+            if stats.technique_rates:
+                payload["articulation_priors"] = dict(stats.technique_rates)
+                payload.update(
+                    {
+                        technique: self._clamp(rate / 0.1)
+                        for technique, rate in stats.technique_rates.items()
+                    }
+                )
 
             source_ids = source_ids_map.get(style, [])
             confidence = self._compute_confidence(stats.sample_count, stats.total_notes)
@@ -108,6 +116,7 @@ class PriorsDeriver:
                 "sample_count": stats.sample_count,
                 "total_notes": stats.total_notes,
                 "top_chord_shapes": dict(list(stats.chord_shape_top_k.items())[:5]),
+                "technique_rates": dict(stats.technique_rates),
             }
 
             derived = DerivedPriors(

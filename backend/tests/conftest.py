@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import tempfile
 from pathlib import Path
-from typing import Generator
 
 import mido
 import pytest
@@ -13,7 +12,9 @@ import pytest
 # Set test environment variables BEFORE importing fretpilot modules.
 _TMP_DIR = tempfile.mkdtemp(prefix="fretpilot_test_")
 os.environ.setdefault("FRETPILOR_DEBUG", "true")
-os.environ.setdefault("FRETPILOR_JWT_SECRET", "test-secret-key")
+os.environ.setdefault(
+    "FRETPILOR_JWT_SECRET", "test-secret-key-with-at-least-32-bytes"
+)
 # Provide a stable Fernet master key so BYOK encrypt/decrypt round-trips work
 # deterministically across the whole test session (an empty key would make
 # ``get_key_vault`` generate a *new* random key on every call, breaking decryption).
@@ -25,6 +26,8 @@ except Exception:  # pragma: no cover - cryptography is a hard dependency
     os.environ.setdefault("FRETPILOR_MASTER_KEY", "")
 os.environ.setdefault("FRETPILOR_DATABASE_URL", f"sqlite:///{_TMP_DIR}/test.db")
 os.environ.setdefault("FRETPILOR_JOB_ROOT", f"{_TMP_DIR}/job_root")
+os.environ.setdefault("FRETPILOR_KNOWLEDGE_ROOT", f"{_TMP_DIR}/knowledge_store")
+os.environ.setdefault("FRETPILOR_ADMIN_EMAILS", "test@fretpilot.dev")
 
 # Ticks-per-beat used by the synthetic MIDI helpers below.
 _TPB = 480

@@ -17,26 +17,28 @@ import {
   CircularProgress,
   Typography,
 } from "@mui/material";
-import RefreshIcon from "@mui/icons-material/Refresh";
-import MusicNoteIcon from "@mui/icons-material/MusicNote";
-import GuitarIcon from "@mui/icons-material/MusicNote";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import {
+  ArrowForwardIcon,
+  MusicNoteIcon,
+  MusicNoteIcon as GuitarIcon,
+  RefreshIcon,
+} from "../icons";
 import { motion } from "framer-motion";
 import UploadZone from "../components/UploadZone";
 import { ProjectListSkeleton } from "../components/Skeletons";
 import { projectsApi } from "../api/client";
 import type { ProjectItem } from "../api/types";
 import { palette } from "../styles/tokens";
+import { apiErrorMessage } from "../utils/apiError";
 
 const STAGE_PILLS = [
-  "Quantize",
-  "Measure Split",
-  "Tie",
-  "Voice",
-  "Separation",
-  "Fingering",
-  "Articulation",
-  "Assemble",
+  "Analyze Tracks",
+  "Classify Instruments",
+  "Repair Performance",
+  "Assign Fingering",
+  "Infer Articulation",
+  "Validate SongIR",
+  "Export",
 ];
 
 export default function ImportPage(): JSX.Element {
@@ -55,8 +57,8 @@ export default function ImportPage(): JSX.Element {
     try {
       const data = await projectsApi.list();
       setProjects(data.items);
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "Failed to load projects."));
     } finally {
       setLoading(false);
     }
@@ -72,8 +74,8 @@ export default function ImportPage(): JSX.Element {
           file.name.replace(/\.[^.]+$/, ""),
         );
         navigate(`/projects/${project.id}`);
-      } catch (err) {
-        setError((err as Error).message);
+      } catch (err: unknown) {
+        setError(apiErrorMessage(err, "MIDI upload failed."));
       } finally {
         setUploading(false);
       }
@@ -83,6 +85,7 @@ export default function ImportPage(): JSX.Element {
 
   const statusColor = (status: string): string => {
     if (status === "repaired") return palette.success;
+    if (status === "partial") return palette.warning;
     if (status === "processing") return palette.warning;
     return palette.textTertiary;
   };
@@ -141,7 +144,7 @@ export default function ImportPage(): JSX.Element {
               Drop a MIDI file.
               <br />
               <span style={{ color: palette.brandPrimary }}>
-                Get a playable tab.
+                Get a playable band score.
               </span>
             </Typography>
             <Typography
@@ -153,9 +156,9 @@ export default function ImportPage(): JSX.Element {
                 fontSize: 15,
               }}
             >
-              FretPilot runs an 8-stage repair pipeline — quantize, measure split,
-              tie, voice, stream separation, fingering, articulation, assemble —
-              to turn AI-generated guitar MIDI into professional six-line tablature.
+              BandPilot classifies guitar, drums, bass, keys, and other tracks,
+              routes each one through its dedicated repair engine, then validates
+              a single SongIR for professional notation and performance exports.
             </Typography>
             {/* Pipeline pills */}
             <Box className="flex flex-wrap gap-1.5 mt-5">
@@ -356,7 +359,7 @@ export default function ImportPage(): JSX.Element {
                   {project.instrument_family === "mixed" && (
                     <Chip
                       size="small"
-                      label="🎸 🥁"
+                      label="Mixed band"
                       sx={{
                         backgroundColor: `${palette.brandPrimary}15`,
                         color: palette.brandPrimary,

@@ -21,7 +21,6 @@ and downstream behaviour is bit-for-bit identical to the single-track path.
 
 from __future__ import annotations
 
-from collections import defaultdict
 from dataclasses import replace
 from typing import TYPE_CHECKING
 

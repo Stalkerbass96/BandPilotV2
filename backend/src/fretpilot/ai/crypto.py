@@ -7,6 +7,10 @@ calls. API responses always return masked keys.
 
 from __future__ import annotations
 
+import base64
+import hashlib
+from functools import lru_cache
+
 from cryptography.fernet import Fernet, InvalidToken
 
 
@@ -49,15 +53,26 @@ class KeyVault:
         return Fernet.generate_key().decode()
 
 
+@lru_cache(maxsize=8)
+def _cached_vault(master_key: str) -> KeyVault:
+    """Return one process-stable vault for a configured key."""
+    return KeyVault(master_key)
+
+
+def _development_master_key(jwt_secret: str) -> str:
+    """Derive a restart-stable debug key from the configured development secret."""
+    digest = hashlib.sha256(f"fretpilot-debug-vault:{jwt_secret}".encode()).digest()
+    return base64.urlsafe_b64encode(digest).decode()
+
+
 def get_key_vault(master_key: str | None = None) -> KeyVault:
     """Build a KeyVault from the given key or the settings."""
-    if master_key is None:
+    if not master_key:
         from fretpilot.config import get_settings
 
-        master_key = get_settings().master_key
-    if not master_key:
-        master_key = KeyVault.generate_master_key()
-    return KeyVault(master_key)
+        settings = get_settings()
+        master_key = settings.master_key or _development_master_key(settings.jwt_secret)
+    return _cached_vault(master_key)
 
 
 __all__ = ["KeyVault", "KeyVaultError", "get_key_vault"]

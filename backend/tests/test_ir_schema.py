@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import fields, is_dataclass
+from dataclasses import is_dataclass
 
 import pytest
 
@@ -24,7 +24,6 @@ from fretpilot.ir.models import (
     Transformation,
 )
 from fretpilot.ir.serde import ir_from_dict, ir_to_dict, load_ir, save_ir
-
 
 SLOTTED_CLASSES = [
     IRTempoEvent,

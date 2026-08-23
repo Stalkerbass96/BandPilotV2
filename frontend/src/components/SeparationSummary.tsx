@@ -8,9 +8,7 @@
  */
 
 import { Box, Chip, Typography } from "@mui/material";
-import LayersIcon from "@mui/icons-material/Layers";
-import StraightenIcon from "@mui/icons-material/Straighten";
-import GraphicEqIcon from "@mui/icons-material/GraphicEq";
+import { GraphicEqIcon, LayersIcon, StraightenIcon } from "../icons";
 import { motion } from "framer-motion";
 import type { SeparationInfo } from "../api/types";
 import { palette, streamColors } from "../styles/tokens";

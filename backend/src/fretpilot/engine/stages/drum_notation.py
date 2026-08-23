@@ -11,8 +11,6 @@ FretPilot), but focused on notation clarity rather than playing technique.
 
 from __future__ import annotations
 
-from collections import defaultdict
-
 from fretpilot.engine.drum_context import (
     DrumPipelineContext,
     NotatedNote,

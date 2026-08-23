@@ -17,13 +17,12 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import CancelIcon from "@mui/icons-material/Cancel";
-import KeyIcon from "@mui/icons-material/VpnKey";
+import { CancelIcon, CheckCircleIcon, VpnKeyIcon as KeyIcon } from "../icons";
 import { motion } from "framer-motion";
 import { byokApi } from "../api/client";
 import type { ByokResponse } from "../api/types";
 import { palette } from "../styles/tokens";
+import { apiErrorMessage } from "../utils/apiError";
 
 export default function ByokPage(): JSX.Element {
   const [config, setConfig] = useState<ByokResponse | null>(null);
@@ -57,7 +56,7 @@ export default function ByokPage(): JSX.Element {
         setModel(data.model ?? "");
       }
     } catch (err) {
-      setError((err as Error).message);
+      setError(apiErrorMessage(err, "Failed to load LLM settings."));
     } finally {
       setLoading(false);
     }
@@ -79,7 +78,7 @@ export default function ByokPage(): JSX.Element {
       setSuccess("BYOK configuration saved successfully.");
       setApiKey("");
     } catch (err) {
-      setError((err as Error).message);
+      setError(apiErrorMessage(err, "Failed to save LLM settings."));
     } finally {
       setSaving(false);
     }
@@ -101,7 +100,7 @@ export default function ByokPage(): JSX.Element {
     } catch (err) {
       setTestResult({
         ok: false,
-        message: (err as Error).message,
+        message: apiErrorMessage(err, "Connection test failed."),
       });
     } finally {
       setTesting(false);
@@ -115,7 +114,7 @@ export default function ByokPage(): JSX.Element {
       setTestResult(null);
       setSuccess("BYOK configuration deleted.");
     } catch (err) {
-      setError((err as Error).message);
+      setError(apiErrorMessage(err, "Failed to remove LLM settings."));
     }
   }
 
@@ -148,7 +147,8 @@ export default function ByokPage(): JSX.Element {
         </Box>
         <Typography variant="body2" sx={{ color: palette.textSecondary, lineHeight: 1.6, maxWidth: 520 }}>
           Configure your own LLM API key to enable AI-driven note rewrite.
-          Without a key, FretPilot runs in degraded (rule-based) mode.
+          Without a key, BandPilot remains fully deterministic; optional
+          LLM-assisted decisions use the rule-based fallback.
         </Typography>
       </Box>
 
@@ -199,7 +199,7 @@ export default function ByokPage(): JSX.Element {
                 >
                   {config
                     ? `Provider: ${config.provider} · Key: ${config.key_masked}`
-                    : "FretPilot is running in degraded (rule-based) mode."}
+                    : "BandPilot is using deterministic rules without an external LLM."}
                 </Typography>
               </Box>
               {config && (

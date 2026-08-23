@@ -38,7 +38,7 @@ def _infer_style_articulations(
                 note_index=note.source_index,
                 type="staccato",
                 confidence=min(1.0, priors["staccato"] * 0.4),
-                reason=f"short note in funk context",
+                reason="short note in funk context",
             )
         )
 

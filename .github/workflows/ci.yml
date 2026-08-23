@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.12.5"
+          enable-cache: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff check src tests
+      - run: uv run pytest --cov --cov-report=term-missing
+      - run: uv build
+      - name: Verify wheel contents and import
+        run: |
+          uv venv .wheel-check
+          uv pip install --python .wheel-check/bin/python dist/*.whl
+          FRETPILOR_DEBUG=true \
+          FRETPILOR_JWT_SECRET=ci-wheel-check-secret-with-32-bytes \
+          FRETPILOR_DATABASE_URL=sqlite:////tmp/fretpilot-wheel.db \
+          FRETPILOR_JOB_ROOT=/tmp/fretpilot-wheel-jobs \
+          FRETPILOR_KNOWLEDGE_ROOT=/tmp/fretpilot-wheel-knowledge \
+          .wheel-check/bin/python -c "from fastapi.testclient import TestClient; from fretpilot.app import create_app; c=TestClient(create_app()); c.__enter__(); assert c.get('/health').status_code == 200; c.__exit__(None, None, None)"
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm audit --audit-level=high
+      - run: npm test
+      - run: npm run build

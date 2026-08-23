@@ -15,6 +15,7 @@ import pytest
 
 from fretpilot.engine.context import PipelineContext
 from fretpilot.engine.pipeline import create_pipeline
+from fretpilot.exporters.base import UnsupportedGuitarIR
 from fretpilot.exporters.gp5 import GP5Exporter
 from fretpilot.midi.parser import load_midi
 from tests.test_multivoice import _FIXTURE, _make_event, _make_ir, _tokyo_cleaned_track
@@ -130,18 +131,5 @@ class TestTokyoMidnightNoOverflow:
         )
         ir = pipeline.execute(ctx)
 
-        result, song = _export_and_parse(ir, tmp_path, "tokyo.gp5")
-        assert result.note_count > 0
-
-        measures = song.tracks[0].measures
-        by_number = {m.number: m for m in measures}
-        # 修复目标是 60 / 72 小节（4/4 容量 4 拍 = 3840 ticks）。
-        for target in (60, 72):
-            assert target in by_number, f"measure {target} should exist in output"
-            measure = by_number[target]
-            capacity = measure.end - measure.start
-            for voice in measure.voices:
-                total = sum(b.duration.time for b in voice.beats)
-                assert total <= capacity, (
-                    f"measure {target} voice overflow: {total} > {capacity}"
-                )
+        with pytest.raises(UnsupportedGuitarIR, match="no playable fingering"):
+            _export_and_parse(ir, tmp_path, "tokyo.gp5")

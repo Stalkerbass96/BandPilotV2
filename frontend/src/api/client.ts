@@ -14,6 +14,8 @@ import type {
   LearnResponse,
   ProjectDetail,
   ProjectItem,
+  RepairAcceptedResponse,
+  RepairJob,
   RepairReport,
   RepairResponse,
   TrackSummaryItem,
@@ -131,12 +133,38 @@ export const projectsApi = {
     id: number,
     fidelity: number,
     tuningId?: string | null,
+    arrangementMode: import("./types").ArrangementMode = "faithful",
   ): Promise<RepairResponse> {
     const res = await http.post(`/projects/${id}/repair`, {
       midi_fidelity: fidelity,
       tuning_id: tuningId ?? null,
+      arrangement_mode: arrangementMode,
     });
     return unwrap(res.data) as RepairResponse;
+  },
+
+  async startRepair(
+    id: number,
+    fidelity: number,
+    tuningId?: string | null,
+    arrangementMode: import("./types").ArrangementMode = "faithful",
+  ): Promise<RepairAcceptedResponse> {
+    const res = await http.post(`/projects/${id}/repair-async`, {
+      midi_fidelity: fidelity,
+      tuning_id: tuningId ?? null,
+      arrangement_mode: arrangementMode,
+    });
+    return unwrap(res.data) as RepairAcceptedResponse;
+  },
+
+  async repairJob(id: number, jobId: number): Promise<RepairJob> {
+    const res = await http.get(`/projects/${id}/repair-jobs/${jobId}`);
+    return unwrap(res.data) as RepairJob;
+  },
+
+  async repairJobs(id: number): Promise<{ items: RepairJob[]; total: number }> {
+    const res = await http.get(`/projects/${id}/repair-jobs`);
+    return unwrap(res.data) as { items: RepairJob[]; total: number };
   },
 
   async report(id: number): Promise<RepairReport> {
@@ -155,6 +183,15 @@ export const tracksApi = {
   async list(projectId: number): Promise<{ tracks: TrackSummaryItem[] }> {
     const res = await http.get(`/projects/${projectId}/tracks`);
     return unwrap(res.data) as { tracks: TrackSummaryItem[] };
+  },
+
+  async overrideFamily(
+    projectId: number,
+    trackIndex: number,
+    family: string,
+  ): Promise<TrackSummaryItem> {
+    const res = await http.put(`/projects/${projectId}/tracks/${trackIndex}`, { family });
+    return unwrap(res.data) as TrackSummaryItem;
   },
 };
 
@@ -229,9 +266,37 @@ export const exportsApi = {
     if (!latest) {
       throw new Error("Export was created but no export record was found.");
     }
-    const fallbackFilename =
-      format === "gp5" ? "output.gp5" : "output_ample.mid";
+    const fallbackNames: Record<string, string> = {
+      gp5: "output.gp5",
+      musicxml: "output.musicxml",
+      humanized_midi: "output_humanized.mid",
+      ample_midi: "output_ample.mid",
+      humanized_ample_eclipse_midi: "output_humanized_ample.mid",
+    };
+    const fallbackFilename = fallbackNames[format] ?? "bandpilot-export.bin";
     return this.download(id, latest.id, fallbackFilename);
+  },
+
+  /** Download the newest existing artifact without creating another export record. */
+  async downloadLatest(
+    id: number,
+    format: string,
+  ): Promise<{ blob: Blob; filename: string } | null> {
+    const list = await this.list(id);
+    const latest = list.items.find((item) => item.format_id === format);
+    if (!latest) return null;
+    const fallbackNames: Record<string, string> = {
+      gp5: "output.gp5",
+      musicxml: "output.musicxml",
+      humanized_midi: "output_humanized.mid",
+      ample_midi: "output_ample.mid",
+      humanized_ample_eclipse_midi: "output_humanized_ample.mid",
+    };
+    return this.download(
+      id,
+      latest.id,
+      fallbackNames[format] ?? "bandpilot-export.bin",
+    );
   },
 };
 
@@ -241,12 +306,18 @@ export const elearningApi = {
   async learn(
     files: File[],
     style?: string,
-    promote = true,
+    promote = false,
+    licenseId = "",
+    rightsConfirmed = false,
+    qualityTier: "reviewed" | "expert" = "reviewed",
   ): Promise<LearnResponse> {
     const form = new FormData();
     for (const f of files) form.append("files", f);
     if (style) form.append("style", style);
     form.append("promote", String(promote));
+    form.append("license_id", licenseId);
+    form.append("rights_confirmed", String(rightsConfirmed));
+    form.append("quality_tier", qualityTier);
     // Learning can take a while for large archives.
     const res = await http.post("/elearning/learn", form, {
       headers: { "Content-Type": "multipart/form-data" },
@@ -263,12 +334,18 @@ export const elearningApi = {
   async learnDrum(
     files: File[],
     style?: string,
-    promote = true,
+    promote = false,
+    licenseId = "",
+    rightsConfirmed = false,
+    qualityTier: "reviewed" | "expert" = "reviewed",
   ): Promise<DrumLearnResponse> {
     const form = new FormData();
     for (const f of files) form.append("files", f);
     if (style) form.append("style", style);
     form.append("promote", String(promote));
+    form.append("license_id", licenseId);
+    form.append("rights_confirmed", String(rightsConfirmed));
+    form.append("quality_tier", qualityTier);
     const res = await http.post("/elearning/learn/drum", form, {
       headers: { "Content-Type": "multipart/form-data" },
       timeout: 600_000,
@@ -279,6 +356,22 @@ export const elearningApi = {
   async versions(): Promise<VersionsResponse> {
     const res = await http.get("/elearning/versions");
     return unwrap(res.data) as VersionsResponse;
+  },
+
+  async evaluate(version: string, files: File[]): Promise<Record<string, unknown>> {
+    const form = new FormData();
+    form.append("version", version);
+    for (const file of files) form.append("files", file);
+    const res = await http.post("/elearning/evaluate", form, {
+      headers: { "Content-Type": "multipart/form-data" },
+      timeout: 600_000,
+    });
+    return unwrap(res.data) as Record<string, unknown>;
+  },
+
+  async promote(version: string): Promise<{ active_version: string }> {
+    const res = await http.post("/elearning/promote", { version });
+    return unwrap(res.data) as { active_version: string };
   },
 
   async rollback(version: string): Promise<{ active_version: string }> {

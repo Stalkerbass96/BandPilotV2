@@ -5,12 +5,14 @@
  */
 
 import { Box, Typography } from "@mui/material";
-import TuneIcon from "@mui/icons-material/Tune";
-import RepeatIcon from "@mui/icons-material/Repeat";
-import NoteOffIcon from "@mui/icons-material/MusicOff";
-import VelocityIcon from "@mui/icons-material/Speed";
-import CutIcon from "@mui/icons-material/ContentCut";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import {
+  CheckCircleIcon,
+  ContentCutIcon as CutIcon,
+  MusicOffIcon as NoteOffIcon,
+  RepeatIcon,
+  SpeedIcon as VelocityIcon,
+  TuneIcon,
+} from "../icons";
 import { motion } from "framer-motion";
 import type { CleanupInfo } from "../api/types";
 import { palette } from "../styles/tokens";

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fretpilot.detection.streams import resolve_streams
 from fretpilot.engine.cleanup import auto_detect_tuning
-from fretpilot.knowledge.tunings import GuitarTuning, TuningRegistry
+from fretpilot.knowledge.tunings import TuningRegistry
 from fretpilot.midi.parser import load_midi
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "tokyo_midnight.mid"

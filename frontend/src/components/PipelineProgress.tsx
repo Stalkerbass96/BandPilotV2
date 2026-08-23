@@ -11,8 +11,7 @@
  */
 
 import { Box, Stack, Typography } from "@mui/material";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
+import { CheckCircleIcon, RadioButtonUncheckedIcon } from "../icons";
 import { motion } from "framer-motion";
 import { palette } from "../styles/tokens";
 

@@ -10,11 +10,13 @@
  */
 
 import { Box, Stack, Typography } from "@mui/material";
-import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import RadioButtonUncheckedIcon from "@mui/icons-material/RadioButtonUnchecked";
-import DrumMapIcon from "@mui/icons-material/Album";
-import PatternIcon from "@mui/icons-material/GraphicEq";
-import StickingIcon from "@mui/icons-material/SwapHoriz";
+import {
+  AlbumIcon as DrumMapIcon,
+  CheckCircleIcon,
+  GraphicEqIcon as PatternIcon,
+  RadioButtonUncheckedIcon,
+  SwapHorizIcon as StickingIcon,
+} from "../icons";
 import { motion } from "framer-motion";
 import { palette } from "../styles/tokens";
 

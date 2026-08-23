@@ -1,5 +1,5 @@
 /**
- * Export page — choose gp5 or Ample MIDI format, trigger export, download.
+ * Export page — choose notation or performance formats, export, and download.
  *
  * Redesign:
  *  - Export format cards with hover micro-interactions.
@@ -18,16 +18,24 @@ import {
   Divider,
   Typography,
 } from "@mui/material";
-import DownloadIcon from "@mui/icons-material/Download";
-import DescriptionIcon from "@mui/icons-material/Description";
-import AudioFileIcon from "@mui/icons-material/AudioFile";
-import PreviewIcon from "@mui/icons-material/Visibility";
+import {
+  AudioFileIcon,
+  DescriptionIcon,
+  DownloadIcon,
+  VisibilityIcon as PreviewIcon,
+} from "../icons";
 import { motion } from "framer-motion";
 import { exportsApi, projectsApi } from "../api/client";
 import type { ExportRecord, ProjectDetail } from "../api/types";
 import TabViewer from "../components/TabViewer";
 import { ExportSkeleton } from "../components/Skeletons";
 import { palette } from "../styles/tokens";
+import { canExportProject } from "../utils/projectStatus";
+import { apiErrorMessage } from "../utils/apiError";
+import {
+  canExportFormat,
+  exportUnavailableReason,
+} from "../utils/exportCapabilities";
 
 interface FormatOption {
   id: string;
@@ -47,6 +55,22 @@ const FORMATS: FormatOption[] = [
     icon: <DescriptionIcon sx={{ fontSize: 40, color: palette.brandPrimary }} />,
   },
   {
+    id: "musicxml",
+    label: "MusicXML 4.0 (.musicxml)",
+    shortLabel: "MusicXML",
+    description:
+      "Interchange score with bass TAB, keyboard hands/fingers, drum notation, ties, and techniques.",
+    icon: <DescriptionIcon sx={{ fontSize: 40, color: palette.brandPrimary }} />,
+  },
+  {
+    id: "humanized_midi",
+    label: "Humanized Band MIDI (.mid)",
+    shortLabel: "Human MIDI",
+    description:
+      "Deterministic multi-track performance MIDI with musical timing, dynamics, and gate shaping.",
+    icon: <AudioFileIcon sx={{ fontSize: 40, color: palette.brandAccent }} />,
+  },
+  {
     id: "ample_midi",
     label: "Ample Guitar MIDI (.mid)",
     shortLabel: "MIDI",
@@ -54,7 +78,27 @@ const FORMATS: FormatOption[] = [
       "Performance-focused MIDI with keyswitches for Ample Guitar Eclipse.",
     icon: <AudioFileIcon sx={{ fontSize: 40, color: palette.brandAccent }} />,
   },
+  {
+    id: "humanized_ample_eclipse_midi",
+    label: "Humanized Ample Eclipse (.mid)",
+    shortLabel: "Ample Human",
+    description:
+      "Humanized guitar performance plus Ample Guitar Eclipse keyswitch and controller mapping.",
+    icon: <AudioFileIcon sx={{ fontSize: 40, color: palette.brandAccent }} />,
+  },
 ];
+
+const FORMAT_LABELS: Record<string, string> = Object.fromEntries(
+  FORMATS.map((format) => [format.id, format.shortLabel]),
+);
+
+const FORMAT_FILENAMES: Record<string, string> = {
+  gp5: "output.gp5",
+  musicxml: "output.musicxml",
+  humanized_midi: "output_humanized.mid",
+  ample_midi: "output_ample.mid",
+  humanized_ample_eclipse_midi: "output_humanized_ample.mid",
+};
 
 export default function ExportPage(): JSX.Element {
   const { id } = useParams();
@@ -87,8 +131,8 @@ export default function ExportPage(): JSX.Element {
       ]);
       setProject(detail);
       setExports(exportList.items);
-    } catch {
-      setError("Failed to load project or exports.");
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "Failed to load project or exports."));
     } finally {
       setLoading(false);
     }
@@ -101,16 +145,11 @@ export default function ExportPage(): JSX.Element {
     setSuccess("");
     try {
       await exportsApi.export(project.id, format);
-      setSuccess(
-        `${format === "gp5" ? "Guitar Pro 5" : "Ample MIDI"} export completed.`,
-      );
+      setSuccess(`${FORMAT_LABELS[format] ?? format} export completed.`);
       const exportList = await exportsApi.list(project.id);
       setExports(exportList.items);
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? "Export failed. Make sure repair was run first.";
-      setError(detail);
+      setError(apiErrorMessage(err, "Export failed. Make sure repair was run first."));
     } finally {
       setExporting(null);
     }
@@ -122,7 +161,7 @@ export default function ExportPage(): JSX.Element {
     setSuccess("");
     try {
       const fallbackFilename =
-        exp.format_id === "gp5" ? "output.gp5" : "output_ample.mid";
+        FORMAT_FILENAMES[exp.format_id] ?? "bandpilot-export.bin";
       const { blob, filename } = await exportsApi.download(
         Number(projectId),
         exp.id,
@@ -137,10 +176,7 @@ export default function ExportPage(): JSX.Element {
       link.remove();
       URL.revokeObjectURL(url);
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? "Download failed.";
-      setError(detail);
+      setError(apiErrorMessage(err, "Download failed."));
     }
   };
 
@@ -151,15 +187,13 @@ export default function ExportPage(): JSX.Element {
     try {
       // Fetch the latest GP5 export as a blob and convert to ArrayBuffer
       // for alphaTab rendering.
-      const { blob } = await exportsApi.exportAndDownload(project.id, "gp5");
+      const existing = await exportsApi.downloadLatest(project.id, "gp5");
+      const { blob } = existing ?? await exportsApi.exportAndDownload(project.id, "gp5");
       const arrayBuffer = await blob.arrayBuffer();
       setPreviewData(arrayBuffer);
       setShowPreview(true);
     } catch (err: unknown) {
-      const detail =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ?? "Preview failed. Make sure repair was run first.";
-      setError(detail);
+      setError(apiErrorMessage(err, "Preview failed. Make sure repair was run first."));
     } finally {
       setPreviewing(false);
     }
@@ -177,6 +211,8 @@ export default function ExportPage(): JSX.Element {
   if (loading) {
     return <ExportSkeleton />;
   }
+
+  const canExport = canExportProject(project?.status);
 
   return (
     <Box className="flex flex-col gap-6">
@@ -208,16 +244,25 @@ export default function ExportPage(): JSX.Element {
         </Alert>
       )}
 
-      {project && project.status !== "repaired" && (
+      {project && !canExport && (
         <Alert severity="warning" sx={{ borderRadius: 2 }}>
           This project has not been repaired yet. Run the repair pipeline in the
           Workbench before exporting.
         </Alert>
       )}
+      {project?.status === "partial" && (
+        <Alert severity="warning" sx={{ borderRadius: 2 }}>
+          Repair completed partially. Review the validation issues and unresolved
+          source events before treating the export as final.
+        </Alert>
+      )}
 
       {/* ── Format cards ── */}
-      <Box className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {FORMATS.map((fmt, index) => (
+      <Box className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+        {FORMATS.map((fmt, index) => {
+          const formatAvailable = canExportFormat(fmt.id, project?.tracks);
+          const unavailableReason = exportUnavailableReason(fmt.id, project?.tracks);
+          return (
           <motion.div
             key={fmt.id}
             initial={{ opacity: 0, y: 12 }}
@@ -265,7 +310,7 @@ export default function ExportPage(): JSX.Element {
                 }
                 onClick={() => handleExport(fmt.id)}
                 disabled={
-                  exporting !== null || project?.status !== "repaired"
+                  exporting !== null || !canExport || !formatAvailable
                 }
                 sx={{
                   textTransform: "none",
@@ -277,13 +322,22 @@ export default function ExportPage(): JSX.Element {
                   ? "Exporting..."
                   : `Export ${fmt.shortLabel}`}
               </Button>
+              {unavailableReason && (
+                <Typography
+                  variant="caption"
+                  sx={{ color: palette.textTertiary, display: "block", mt: 1.25 }}
+                >
+                  {unavailableReason}
+                </Typography>
+              )}
             </Box>
           </motion.div>
-        ))}
+          );
+        })}
       </Box>
 
       {/* ── alphaTab preview ── */}
-      {project?.status === "repaired" && (
+      {canExport && (
         <Box
           className="rounded-xl p-5"
           sx={{
@@ -347,7 +401,7 @@ export default function ExportPage(): JSX.Element {
                 className="flex items-center justify-between gap-3 py-2"
               >
                 <Box className="flex items-center gap-3 flex-1 min-w-0">
-                  {exp.format_id === "gp5" ? (
+                  {exp.format_id === "gp5" || exp.format_id === "musicxml" ? (
                     <DescriptionIcon
                       sx={{ color: palette.brandPrimary, flexShrink: 0 }}
                     />

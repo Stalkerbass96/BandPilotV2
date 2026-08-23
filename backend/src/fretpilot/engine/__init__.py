@@ -1,5 +1,6 @@
 """Repair engine package."""
 
+from fretpilot.engine.cleanup import CleanupResult, cleanup_streams
 from fretpilot.engine.context import (
     ArticulationDecision,
     FingeredNote,
@@ -10,7 +11,6 @@ from fretpilot.engine.context import (
     SplitNote,
     VoicedNote,
 )
-from fretpilot.engine.cleanup import CleanupResult, cleanup_streams
 from fretpilot.engine.pipeline import PipelineStage, RepairPipeline, create_pipeline
 
 __all__ = [

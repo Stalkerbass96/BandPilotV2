@@ -20,8 +20,6 @@ propagated through the entire pipeline:
 
 from __future__ import annotations
 
-import pytest
-
 from fretpilot.engine.context import PipelineContext
 from fretpilot.engine.stages import (
     ArticulationStage,
@@ -33,13 +31,12 @@ from fretpilot.engine.stages import (
     VoiceStage,
 )
 from fretpilot.guitar.fretboard import candidate_positions
-from fretpilot.guitar.instrument import STANDARD_TUNING, GuitarTuning as InstrumentTuning
+from fretpilot.guitar.instrument import STANDARD_TUNING
+from fretpilot.guitar.instrument import GuitarTuning as InstrumentTuning
 from fretpilot.knowledge.engine import KnowledgeEngine
 from fretpilot.knowledge.tunings import GuitarTuning, TuningRegistry
 from fretpilot.midi.models import NormalizedTrack
-
-from tests.conftest import _note, _timeline, _MockAdvisor
-
+from tests.conftest import _MockAdvisor, _note, _timeline
 
 # ─── Helpers ───
 
@@ -60,8 +57,8 @@ def _build_ctx(
         ]
     timeline = _timeline(notes)
     if engine is None:
-        from fretpilot.knowledge.registry import KnowledgeRegistry
         from fretpilot.config import get_settings
+        from fretpilot.knowledge.registry import KnowledgeRegistry
 
         registry = KnowledgeRegistry.from_assets_dir(get_settings().assets_dir)
         engine = KnowledgeEngine(registry)

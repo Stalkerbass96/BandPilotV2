@@ -37,9 +37,7 @@ from fretpilot.ai.models import (
 )
 from fretpilot.api.routes import projects as projects_module
 from fretpilot.midi.models import NormalizedTrack
-
 from tests.conftest import _make_midi_file, _note
-
 
 # ─── Helpers ───
 
@@ -287,7 +285,7 @@ class TestRepairFlowRewriteIntegration:
 
         res = client.post(
             f"/api/projects/{project_id}/repair",
-            json={"midi_fidelity": 0.5},
+            json={"midi_fidelity": 0.5, "arrangement_mode": "creative_rewrite"},
             headers={"Authorization": f"Bearer {auth_token}"},
         )
         assert res.status_code == 200
@@ -342,7 +340,7 @@ class TestRepairFlowRewriteIntegration:
         # midi_fidelity=0.0 → max rewrites allowed (max_deletions=50).
         repair_res = client.post(
             f"/api/projects/{project_id}/repair",
-            json={"midi_fidelity": 0.0},
+            json={"midi_fidelity": 0.0, "arrangement_mode": "creative_rewrite"},
             headers={"Authorization": f"Bearer {auth_token}"},
         )
         assert repair_res.status_code == 200

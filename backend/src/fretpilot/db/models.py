@@ -82,6 +82,31 @@ class Project(Base):
     exports: Mapped[list["ExportRecord"]] = relationship(
         back_populates="project", cascade="all, delete-orphan"
     )
+    repair_jobs: Mapped[list["RepairJob"]] = relationship(
+        back_populates="project", cascade="all, delete-orphan"
+    )
+
+
+class RepairJob(Base):
+    """Durable execution history for a project repair request."""
+
+    __tablename__ = "repair_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    run_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True)
+    status: Mapped[str] = mapped_column(String(32), default="processing", nullable=False)
+    progress: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    arrangement_mode: Mapped[str] = mapped_column(String(32), nullable=False)
+    settings_json: Mapped[str] = mapped_column(Text, nullable=False)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    project: Mapped["Project"] = relationship(back_populates="repair_jobs")
 
 
 class ExportRecord(Base):
@@ -99,4 +124,4 @@ class ExportRecord(Base):
     project: Mapped["Project"] = relationship(back_populates="exports")
 
 
-__all__ = ["Base", "User", "ByokConfig", "Project", "ExportRecord"]
+__all__ = ["Base", "User", "ByokConfig", "Project", "RepairJob", "ExportRecord"]

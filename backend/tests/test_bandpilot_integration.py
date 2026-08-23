@@ -67,6 +67,9 @@ def _make_mixed_midi(
     *,
     guitar_notes: list[tuple[int, int]] | None = None,
     drum_notes: list[tuple[int, int]] | None = None,
+    guitar_track_count: int = 1,
+    drum_track_count: int = 1,
+    include_keys: bool = False,
 ) -> Path:
     """Write a type-1 MIDI with a guitar track and a GM-percussion drum track."""
     guitar_notes = guitar_notes if guitar_notes is not None else _GUITAR_NOTES
@@ -106,8 +109,16 @@ def _make_mixed_midi(
             last_tick = tick
         return track
 
-    midi.tracks.append(_build_track("Guitar", 30, 0, guitar_notes))
-    midi.tracks.append(_build_track("Drums", 0, 9, drum_notes))
+    for index in range(guitar_track_count):
+        name = "Guitar" if guitar_track_count == 1 else f"Guitar {index + 1}"
+        midi.tracks.append(_build_track(name, 30, index, guitar_notes))
+    for index in range(drum_track_count):
+        name = "Drums" if drum_track_count == 1 else f"Drums {index + 1}"
+        midi.tracks.append(_build_track(name, 0, 9, drum_notes))
+    if include_keys:
+        midi.tracks.append(
+            _build_track("Piano", 0, 8, [(72, 80), (76, 80), (79, 80), (84, 80)])
+        )
     midi.save(path)
     return path
 
@@ -318,6 +329,9 @@ class TestMixedMidiApiFlow:
         assert res.status_code == 200, res.text
         data = res.json()["data"]
         assert data["status"] == "repaired"
+        assert data["job_id"] > 0
+        assert data["arrangement_mode"] == "faithful"
+        assert data["validation_status"] == "passed"
         assert data["has_drums"] is True
         assert data["note_count"] == len(_GUITAR_NOTES) + 16  # 8 guitar + 16 drums
 
@@ -326,6 +340,29 @@ class TestMixedMidiApiFlow:
         assert modules == {"fretpilot", "stickpilot"}
         for t in data["tracks_repaired"]:
             assert t["stages_completed"] == 8
+
+        jobs = client.get(
+            f"/api/projects/{project_id}/repair-jobs",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert jobs.status_code == 200
+        latest_job = jobs.json()["data"]["items"][0]
+        assert latest_job["id"] == data["job_id"]
+        assert latest_job["status"] == "repaired"
+        assert latest_job["run_id"]
+
+        song_ir = client.get(
+            f"/api/projects/{project_id}/song-ir",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert song_ir.status_code == 200
+        assert song_ir.json()["data"]["schema_version"] == "2.0"
+        artifacts = client.get(
+            f"/api/projects/{project_id}/artifacts",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert artifacts.status_code == 200
+        assert artifacts.json()["data"]["run_id"] == latest_job["run_id"]
 
         # Export and parse back.
         res = client.post(
@@ -367,6 +404,117 @@ class TestMixedMidiApiFlow:
         for header in song.measureHeaders:
             assert header.timeSignature.numerator == 4
             assert header.timeSignature.denominator.value == 4
+
+
+class TestMultiTrackRepairPolicy:
+    """Phase 1 track coverage and aggregate-status policy."""
+
+    def test_drum_only_repair(self, client, auth_token: str, tmp_path: Path) -> None:
+        midi_path = _make_mixed_midi(
+            tmp_path / "drums.mid", guitar_track_count=0, drum_track_count=1
+        )
+        project_id = _create_project(client, auth_token, midi_path)
+        response = client.post(
+            f"/api/projects/{project_id}/repair",
+            json={"midi_fidelity": 0.5},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["status"] == "repaired"
+        assert data["cleanup"] is None
+        assert [track["module"] for track in data["tracks_repaired"]] == ["stickpilot"]
+
+        from fretpilot.config import get_settings
+
+        merged_path = next(
+            get_settings().job_root_path.glob(f"*/{project_id}/ir_merged.json")
+        )
+        guitar_ir, drum_ir = load_merged_irs(merged_path)
+        assert guitar_ir is None
+        assert drum_ir is not None and len(drum_ir.tracks) == 1
+
+    @pytest.mark.parametrize(
+        ("guitar_count", "drum_count", "expected_module"),
+        [(2, 0, "fretpilot"), (0, 2, "stickpilot")],
+    )
+    def test_all_same_family_tracks_are_repaired(
+        self,
+        client,
+        auth_token: str,
+        tmp_path: Path,
+        guitar_count: int,
+        drum_count: int,
+        expected_module: str,
+    ) -> None:
+        midi_path = _make_mixed_midi(
+            tmp_path / f"multi-{expected_module}.mid",
+            guitar_track_count=guitar_count,
+            drum_track_count=drum_count,
+        )
+        project_id = _create_project(client, auth_token, midi_path)
+        response = client.post(
+            f"/api/projects/{project_id}/repair",
+            json={"midi_fidelity": 0.5},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["status"] == "repaired"
+        assert len(data["tracks_repaired"]) == 2
+        assert {track["module"] for track in data["tracks_repaired"]} == {expected_module}
+
+    def test_keys_track_is_repaired_by_keyspilot(
+        self, client, auth_token: str, tmp_path: Path
+    ) -> None:
+        midi_path = _make_mixed_midi(
+            tmp_path / "guitar-keys.mid", drum_track_count=0, include_keys=True
+        )
+        project_id = _create_project(client, auth_token, midi_path)
+        response = client.post(
+            f"/api/projects/{project_id}/repair",
+            json={"midi_fidelity": 0.5},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()["data"]
+        assert data["status"] == "repaired"
+        piano = next(track for track in data["tracks_repaired"] if track["track_name"] == "Piano")
+        assert piano["module"] == "keyspilot"
+        assert piano["skipped"] is False
+        assert piano["failed"] is False
+
+        from fretpilot.config import get_settings
+
+        manifest_path = next(
+            get_settings().job_root_path.glob(f"*/{project_id}/repair_manifest.json")
+        )
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert manifest["status"] == "repaired"
+        assert manifest["passthrough_tracks"] == []
+        song = json.loads((manifest_path.parent / "song_ir.json").read_text(encoding="utf-8"))
+        assert "keys" in {track["family"] for track in song["score"]["tracks"]}
+
+    def test_keys_only_project_is_a_valid_repaired_score(
+        self, client, auth_token: str, tmp_path: Path
+    ) -> None:
+        midi_path = _make_mixed_midi(
+            tmp_path / "keys-only.mid",
+            guitar_track_count=0,
+            drum_track_count=0,
+            include_keys=True,
+        )
+        project_id = _create_project(client, auth_token, midi_path)
+        response = client.post(
+            f"/api/projects/{project_id}/repair",
+            json={"midi_fidelity": 0.5},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert response.status_code == 200
+        data = response.json()["data"]
+        assert data["status"] == "repaired"
+        assert data["tracks_repaired"][0]["module"] == "keyspilot"
+        assert data["tracks_repaired"][0]["skipped"] is False
 
     def test_ir_merged_contract(
         self, client, auth_token: str, tmp_path: Path
@@ -463,9 +611,62 @@ class TestBandpilotExportUnit:
         assert song.tracks[0].isPercussionTrack is True
         assert song.tracks[0].name == "Drums"
 
+    def test_simultaneous_drum_hits_use_distinct_gp5_virtual_strings(
+        self, tmp_path: Path
+    ) -> None:
+        drum_ir = _build_drum_ir()
+        drum_ir.tracks[0].measures[0].events.append(
+            DrumNoteEvent(
+                id="d-snare",
+                source_note_index=99,
+                pitch=38,
+                piece="snare",
+                score=ScoreTiming(
+                    start_beat=0.0,
+                    duration_beats=0.5,
+                    measure_number=1,
+                    beat_in_measure=0.0,
+                    voice=1,
+                ),
+                performance=PerformanceTiming(
+                    source_start_beat=0.0,
+                    source_duration_beats=0.45,
+                    velocity=92,
+                ),
+                location=DrumHitLocation(
+                    piece="snare", sticking="L", technique="normal"
+                ),
+            )
+        )
+
+        out = tmp_path / "drum_chord.gp5"
+        result = export_bandpilot(None, drum_ir, out)
+        song = gp.parse(str(out))
+        onset_notes = song.tracks[0].measures[0].voices[0].beats[0].notes
+
+        assert result.note_count == 5
+        assert {note.value for note in onset_notes} == {36, 38}
+        assert len({note.string for note in onset_notes}) == 2
+
+    def test_gp5_unicode_metadata_falls_back_without_breaking_score(
+        self, tmp_path: Path
+    ) -> None:
+        drum_ir = _build_drum_ir()
+        drum_ir.title = "中文标题"
+        drum_ir.tracks[0].name = "中文鼓组"
+
+        out = tmp_path / "unicode_metadata.gp5"
+        result = export_bandpilot(None, drum_ir, out)
+        song = gp.parse(str(out))
+
+        assert song.title == "BandPilot"
+        assert song.tracks[0].name == "Drums 1"
+        assert any("legacy cp1252 metadata" in warning for warning in result.warnings)
+
     def test_both_ir_shared_measure_count(self, tmp_path: Path) -> None:
         """Guitar IR spans fewer measures than drum IR → guitar tail is rests."""
         guitar_ir = _build_guitar_ir(measure_count=1)
+        guitar_ir.tracks[0].measures[0].events[0].score.voice = 2
         drum_ir = _build_drum_ir(measure_count=2)
         merged = _write_merged_ir(tmp_path, guitar_ir, drum_ir)
         g, d = load_merged_irs(merged)
@@ -493,6 +694,9 @@ class TestBandpilotExportUnit:
         ]
         assert padded_beats, "padded measure must contain rest beats"
         assert all(b.notes == [] for b in padded_beats)
+        assert guitar_measure_2.voices[1].beats, (
+            "a globally active voice 2 must remain present in padded measures"
+        )
 
     def test_load_merged_irs_rejects_missing_keys(self, tmp_path: Path) -> None:
         bad = tmp_path / "bad.json"

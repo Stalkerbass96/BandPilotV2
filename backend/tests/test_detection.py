@@ -5,7 +5,8 @@ from __future__ import annotations
 from fretpilot.detection import classify_timeline
 from fretpilot.detection.models import GuitarDetectionReport
 from fretpilot.detection.streams import resolve_streams
-
+from fretpilot.drum.classifier import classify_drum_track
+from fretpilot.orchestrator.detector import InstrumentFamily, classify_track_family
 from tests.conftest import _note, _timeline
 
 
@@ -39,6 +40,88 @@ class TestClassifyTimeline:
         report = classify_timeline(timeline)
         assert report.total_guitar_tracks == 0
         assert report.primary_guitar_track_index is None
+
+    def test_zero_based_channel_nine_is_standard_drum_channel(self) -> None:
+        notes = [
+            _note(
+                pitch=42,
+                start_beat=index * 0.5,
+                duration_beats=0.25,
+                program=0,
+                channel=9,
+            )
+            for index in range(4)
+        ]
+        assert classify_drum_track(_timeline(notes).tracks[0]) is True
+
+    def test_explicit_keyboard_name_beats_weak_low_register_bass_hint(self) -> None:
+        notes = [
+            _note(
+                pitch=pitch,
+                start_beat=float(index),
+                duration_beats=0.5,
+                program=126,
+            )
+            for index, pitch in enumerate((36, 40, 43, 48))
+        ]
+        track = _timeline(notes).tracks[0]
+        track.name = "Low Keyboard"
+
+        classification = classify_track_family(track)
+
+        assert classification.family == InstrumentFamily.KEYS
+        assert "Keyboard" in classification.reason
+
+    def test_guitar_program_beats_weak_drum_pattern_heuristics(self) -> None:
+        notes = [
+            _note(
+                pitch=60,
+                start_beat=index * 0.125,
+                duration_beats=0.125,
+                program=25,
+            )
+            for index in range(24)
+        ]
+
+        track = _timeline(notes).tracks[0]
+        track.name = "Strings"
+        classification = classify_track_family(track)
+
+        assert classification.family == InstrumentFamily.GUITAR
+
+    def test_non_bass_program_beats_weak_low_register_hint(self) -> None:
+        notes = [
+            _note(
+                pitch=pitch,
+                start_beat=float(index),
+                duration_beats=0.5,
+                program=48,
+            )
+            for index, pitch in enumerate((36, 40, 43, 48))
+        ]
+
+        track = _timeline(notes).tracks[0]
+        track.name = "Strings"
+        classification = classify_track_family(track)
+
+        assert classification.family == InstrumentFamily.UNKNOWN
+
+    def test_explicit_bass_name_beats_piano_program(self) -> None:
+        notes = [
+            _note(
+                pitch=pitch,
+                start_beat=float(index),
+                duration_beats=0.5,
+                program=2,
+            )
+            for index, pitch in enumerate((36, 40, 43, 48))
+        ]
+        track = _timeline(notes).tracks[0]
+        track.name = "Bass"
+
+        classification = classify_track_family(track)
+
+        assert classification.family == InstrumentFamily.BASS
 
     def test_bass_program_classified_as_bass(self) -> None:
         """GM bass program 33 (Electric Bass) should be classified as bass, not guitar."""

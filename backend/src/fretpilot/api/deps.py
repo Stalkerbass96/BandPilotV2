@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from fretpilot.ai.crypto import KeyVault, get_key_vault
 from fretpilot.api.security import verify_token
+from fretpilot.config import get_settings
 from fretpilot.db.models import User
 from fretpilot.db.session import get_db
 
@@ -44,4 +45,14 @@ def get_key_vault_dependency() -> KeyVault:
     return get_key_vault()
 
 
-__all__ = ["get_current_user", "get_key_vault_dependency"]
+def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    """Require a user whose email is configured as a global administrator."""
+    if user.email.lower() not in get_settings().admin_email_set:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Administrator access required",
+        )
+    return user
+
+
+__all__ = ["get_current_admin", "get_current_user", "get_key_vault_dependency"]

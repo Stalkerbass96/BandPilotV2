@@ -1,0 +1,35 @@
+{
+  "snapshot_version": "2026.08.18-123416",
+  "schema_version": "1",
+  "status": "approved",
+  "entries": [
+    {
+      "knowledge_id": "performance-natural-band-v1",
+      "domain": "performance_profiles",
+      "kind": "humanization_profile",
+      "schema_version": "1",
+      "knowledge_version": "2026.08.23",
+      "status": "approved",
+      "payload": {
+        "profile_id": "natural-band-v1",
+        "timing_jitter_beats": 0.012,
+        "velocity_jitter": 3,
+        "downbeat_accent": 5,
+        "backbeat_accent": 2,
+        "gate_ratio": 0.96,
+        "source_deviation_limit": 0.04,
+        "seed": "bandpilot-natural-band-v1"
+      },
+      "scope": {"profile": ["natural-band-v1"]},
+      "provenance": {
+        "source_type": "hand_authored",
+        "source_ids": ["bandpilot-humanization-eval-v1"]
+      },
+      "evaluation": {
+        "status": "approved",
+        "confidence": 0.82,
+        "tested_against": ["phase6-determinism", "phase6-midi-parseback"]
+      }
+    }
+  ]
+}

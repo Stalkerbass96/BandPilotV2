@@ -7,9 +7,10 @@ each track.
 Priority order:
   1. Drum channel 10 → drums (strongest signal).
   2. Guitar signals (track name, GM program, pitch range) → guitar.
-  3. Bass program / pitch range → bass.
-  4. Keys / piano program → keys.
-  5. Else → unknown (passthrough, no repair).
+  3. Explicit bass program / name → bass.
+  4. Keys / piano program or name → keys.
+  5. Low pitch range → bass.
+  6. Else → unknown (generic pitched repair).
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
-from fretpilot.detection.streams import LogicalStream, resolve_streams
 from fretpilot.drum.classifier import classify_drum_track, detect_drum_family
 from fretpilot.midi.gm import is_bass_program, is_guitar_program
 from fretpilot.midi.models import NormalizedTimeline, NormalizedTrack
@@ -66,12 +66,14 @@ class TrackFamilyClassification:
     kit_type: str = ""
     detected_pieces: list[str] = field(default_factory=list)
     note_count: int = 0
+    user_overridden: bool = False
 
 
 # ─── Pitch-range constants ───
 
 _BASS_MAX_PITCH = 60  # C4 upper bound for bass
 _GUITAR_MIN_PITCH = 40  # E2
+_DRUM_NAME_HINTS = ("drum", "perc", "beat", "kit", "sticks")
 
 
 def _is_keys_program(program: int | None) -> bool:
@@ -89,15 +91,19 @@ def _is_bass_by_pitch_range(track: NormalizedTrack) -> bool:
     return max(pitches) <= _BASS_MAX_PITCH and min(pitches) >= 24  # below guitar, above sub-bass
 
 
-def classify_track_family(track: NormalizedTrack) -> TrackFamilyClassification:
+def classify_track_family(
+    track: NormalizedTrack,
+    override: InstrumentFamily | str | None = None,
+) -> TrackFamilyClassification:
     """Classify a single track into an instrument family.
 
     Priority order:
-      1. Drum channel 10 / drum track-name keywords / drum pitch range → drums.
-      2. Guitar signals (GM program, track name, pitch range) → guitar.
-      3. Bass GM program or bass pitch range → bass.
-      4. Piano/keys GM program → keys.
-      5. Else → unknown.
+      1. Drum channel 10 / explicit drum track-name keywords → drums.
+      2. Guitar signals (GM program or explicit track name) → guitar.
+      3. Explicit bass GM program or name → bass.
+      4. Piano/keys GM program or name → keys.
+      5. Heuristic drums/bass only when no GM program is available.
+      6. Else → unknown/generic.
 
     Args:
         track: A physical MIDI track from the normalized timeline.
@@ -106,12 +112,40 @@ def classify_track_family(track: NormalizedTrack) -> TrackFamilyClassification:
         A ``TrackFamilyClassification`` with the detected family and metadata.
     """
     name = (track.name or "").strip() or f"Track {track.index + 1}"
+    lower_name = name.lower()
     note_count = len(track.notes)
+    program = track.program
+    if override is not None:
+        try:
+            family = override if isinstance(override, InstrumentFamily) else InstrumentFamily(override)
+        except ValueError as exc:
+            raise ValueError(f"Unknown instrument family override: {override!r}") from exc
+        return TrackFamilyClassification(
+            track_index=track.index,
+            track_name=name,
+            family=family,
+            confidence=1.0,
+            reason="user override",
+            is_guitar=family == InstrumentFamily.GUITAR,
+            is_drum=family == InstrumentFamily.DRUMS,
+            note_count=note_count,
+            user_overridden=True,
+        )
 
-    # ── Priority 1: Drums ──
-    # The drum classifier already combines channel-10, track-name, pitch-range,
-    # and rapid-repeat signals with the correct priority ordering.
-    if classify_drum_track(track):
+    # ── Priority 1: explicit drums ──
+    # Pitch range + rapid repeats alone can describe fast fingerstyle guitar,
+    # keyboards, or sequenced FX. Only use those weak drum heuristics when the
+    # MIDI supplies no program identity.
+    channel_ten_ratio = (
+        sum(note.channel == 9 for note in track.notes) / note_count
+        if note_count
+        else 0.0
+    )
+    explicit_drum = channel_ten_ratio > 0.3 or any(
+        hint in lower_name for hint in _DRUM_NAME_HINTS
+    )
+    heuristic_drum = program is None and classify_drum_track(track)
+    if explicit_drum or heuristic_drum:
         drum_cls_list = detect_drum_family(
             NormalizedTimeline(
                 source="",
@@ -142,7 +176,6 @@ def classify_track_family(track: NormalizedTrack) -> TrackFamilyClassification:
     # ── Priority 2: Guitar ──
     # Use the existing guitar classifier via resolve_streams to get a
     # full TrackClassification, then check its is_guitar flag.
-    program = track.program
     if track.notes:
         # Check program first (fast path).
         if is_guitar_program(program):
@@ -157,7 +190,6 @@ def classify_track_family(track: NormalizedTrack) -> TrackFamilyClassification:
                 note_count=note_count,
             )
         # Track-name keyword check for guitar.
-        lower_name = name.lower()
         if "guitar" in lower_name and "bass" not in lower_name:
             role = "lead" if "lead" in lower_name else ("rhythm" if "rhythm" in lower_name else "unknown")
             return TrackFamilyClassification(
@@ -181,7 +213,7 @@ def classify_track_family(track: NormalizedTrack) -> TrackFamilyClassification:
             reason=f"GM bass program {program}",
             note_count=note_count,
         )
-    if "bass" in name.lower():
+    if "bass" in lower_name:
         return TrackFamilyClassification(
             track_index=track.index,
             track_name=name,
@@ -190,16 +222,6 @@ def classify_track_family(track: NormalizedTrack) -> TrackFamilyClassification:
             reason=f"track name {name!r} → bass",
             note_count=note_count,
         )
-    if _is_bass_by_pitch_range(track):
-        return TrackFamilyClassification(
-            track_index=track.index,
-            track_name=name,
-            family=InstrumentFamily.BASS,
-            confidence=0.6,
-            reason="pitch range suggests bass",
-            note_count=note_count,
-        )
-
     # ── Priority 4: Keys ──
     if _is_keys_program(program):
         return TrackFamilyClassification(
@@ -210,7 +232,6 @@ def classify_track_family(track: NormalizedTrack) -> TrackFamilyClassification:
             reason=f"GM piano/keys program {program}",
             note_count=note_count,
         )
-    lower_name = name.lower()
     if any(kw in lower_name for kw in ("piano", "keyboard", "keys")):
         return TrackFamilyClassification(
             track_index=track.index,
@@ -218,6 +239,19 @@ def classify_track_family(track: NormalizedTrack) -> TrackFamilyClassification:
             family=InstrumentFamily.KEYS,
             confidence=0.85,
             reason=f"track name {name!r} → keys",
+            note_count=note_count,
+        )
+
+    # Low register is weaker evidence than an explicit instrument program or
+    # name. Run it only after keyboard signals so a low keyboard part is not
+    # stolen by the bass plugin.
+    if program is None and _is_bass_by_pitch_range(track):
+        return TrackFamilyClassification(
+            track_index=track.index,
+            track_name=name,
+            family=InstrumentFamily.BASS,
+            confidence=0.6,
+            reason="pitch range suggests bass",
             note_count=note_count,
         )
 

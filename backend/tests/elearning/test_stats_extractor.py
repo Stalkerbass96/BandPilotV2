@@ -9,7 +9,6 @@ from __future__ import annotations
 from fretpilot.elearning.models import GroundTruthNote, GroundTruthTab
 from fretpilot.elearning.stats_extractor import StatsExtractor
 
-
 # ─── Helpers ───
 
 

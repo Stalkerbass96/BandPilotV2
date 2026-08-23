@@ -7,14 +7,9 @@ mock auth. No real LLM calls are made.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-
-from fretpilot.db.session import get_db, init_db, _SessionLocal
-from fretpilot.db.models import User
-from fretpilot.api.security import hash_password, create_access_token
 
 from tests.conftest import _make_midi_file
 
@@ -198,6 +193,20 @@ class TestProjectEndpoints:
         )
         assert res.status_code == 415
 
+    def test_create_project_rejects_invalid_midi_without_orphan(
+        self, client: TestClient, auth_token: str
+    ) -> None:
+        response = client.post(
+            "/api/projects",
+            files={"file": ("broken.mid", b"not-midi", "audio/midi")},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert response.status_code == 422
+        projects = client.get(
+            "/api/projects", headers={"Authorization": f"Bearer {auth_token}"}
+        ).json()["data"]
+        assert projects["total"] == 0
+
     def test_get_project_detail(
         self, client: TestClient, auth_token: str, tmp_path: Path
     ) -> None:
@@ -260,6 +269,39 @@ class TestProjectEndpoints:
         assert isinstance(cleanup["velocity_remapped"], bool)
         assert isinstance(cleanup["overlaps_truncated"], int)
         assert isinstance(cleanup["total_actions"], int)
+
+    def test_async_repair_persists_pollable_result(
+        self, client: TestClient, auth_token: str, tmp_path: Path
+    ) -> None:
+        midi_path = _make_midi_file(tmp_path / "async_repair.mid")
+        with open(midi_path, "rb") as midi_file:
+            created = client.post(
+                "/api/projects",
+                files={"file": ("async_repair.mid", midi_file, "audio/midi")},
+                headers={"Authorization": f"Bearer {auth_token}"},
+            )
+        project_id = created.json()["data"]["id"]
+
+        started = client.post(
+            f"/api/projects/{project_id}/repair-async",
+            json={"midi_fidelity": 0.5, "arrangement_mode": "faithful"},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert started.status_code == 202
+        accepted = started.json()["data"]
+        assert accepted["project_id"] == project_id
+        job_id = accepted["job"]["id"]
+
+        polled = client.get(
+            f"/api/projects/{project_id}/repair-jobs/{job_id}",
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert polled.status_code == 200
+        job = polled.json()["data"]
+        assert job["status"] == "repaired"
+        assert job["progress"] == 1.0
+        assert job["result"]["job_id"] == job_id
+        assert job["result"]["validation_status"] == "passed"
 
     def test_repair_report(
         self, client: TestClient, auth_token: str, tmp_path: Path
@@ -357,6 +399,25 @@ class TestExportEndpoints:
         assert res.status_code == 200
         data = res.json()["data"]
         assert data["format_id"] == "ample_midi"
+
+    @pytest.mark.parametrize(
+        "format_id",
+        ["musicxml", "humanized_midi", "humanized_ample_eclipse_midi"],
+    )
+    def test_export_phase_5_6_formats(
+        self,
+        client: TestClient,
+        auth_token: str,
+        repaired_project_id: int,
+        format_id: str,
+    ) -> None:
+        res = client.post(
+            f"/api/projects/{repaired_project_id}/export",
+            json={"format": format_id},
+            headers={"Authorization": f"Bearer {auth_token}"},
+        )
+        assert res.status_code == 200, res.text
+        assert res.json()["data"]["format_id"] == format_id
 
     def test_export_unsupported_format(
         self, client: TestClient, auth_token: str, repaired_project_id: int

@@ -15,7 +15,7 @@
  */
 
 import { Box, Skeleton, Typography } from "@mui/material";
-import MusicNoteIcon from "@mui/icons-material/MusicNote";
+import { MusicNoteIcon } from "../icons";
 import { useAlphaTab } from "../hooks/useAlphaTab";
 import { palette } from "../styles/tokens";
 

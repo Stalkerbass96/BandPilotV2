@@ -49,9 +49,10 @@ def _register_routes(app: FastAPI) -> None:
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-    settings = get_settings()
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = getattr(app.state, "settings", None) or get_settings()
     logger.info("Starting %s (debug=%s)", settings.app_name, settings.debug)
+    settings.ensure_knowledge_store()
     init_db(settings.database_url)
     yield
     logger.info("Shutting down %s", settings.app_name)
@@ -67,13 +68,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version="2.0.0",
-        description="Repair AI-generated guitar MIDI into playable, notatable output.",
+        description="Repair AI-generated guitar and drum MIDI into notatable output.",
         lifespan=lifespan,
     )
+    app.state.settings = settings
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if settings.debug else ["http://localhost:5173"],
+        allow_origins=settings.cors_origin_list,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

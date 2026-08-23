@@ -10,22 +10,18 @@ This file tests edge cases that the existing test suite may not cover:
 
 from __future__ import annotations
 
-import statistics
 from pathlib import Path
 
 import pytest
 
 from fretpilot.detection.streams import LogicalStream
 from fretpilot.engine.cleanup import (
-    TEMPO_DEDUP_BPM_THRESHOLD,
-    VELOCITY_FLAT_VARIANCE,
     cleanup_streams,
     deduplicate_tempos,
-    handle_out_of_range_pitches,
     remap_flat_velocity,
     truncate_overlaps,
 )
-from fretpilot.knowledge.tunings import GuitarTuning, TuningRegistry
+from fretpilot.knowledge.tunings import TuningRegistry
 from fretpilot.midi.models import (
     NormalizedNote,
     NormalizedTimeline,
@@ -599,7 +595,6 @@ class TestRealSamplePipeline:
         from fretpilot.engine.cleanup import auto_detect_tuning
         timeline = load_midi(_FIXTURE)
         streams = resolve_streams(timeline)
-        original_count = sum(s.note_count for s in streams)
         tuning = auto_detect_tuning(streams)
 
         result = cleanup_streams(

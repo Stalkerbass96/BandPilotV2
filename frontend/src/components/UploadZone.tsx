@@ -9,8 +9,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { Box, Typography } from "@mui/material";
-import CloudUploadIcon from "@mui/icons-material/CloudUpload";
-import AudioFileIcon from "@mui/icons-material/AudioFile";
+import { AudioFileIcon, CloudUploadIcon } from "../icons";
 import { motion } from "framer-motion";
 import { palette } from "../styles/tokens";
 

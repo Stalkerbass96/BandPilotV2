@@ -105,6 +105,11 @@ class ShadowRewriteAdvisor:
         """Return True if an LLM provider is configured."""
         return self._provider is not None
 
+    @property
+    def provider(self) -> RewriteAdvisor | None:
+        """Expose the validated provider to deterministic pipeline stages."""
+        return self._provider
+
     def infer_style(self, features: TrackFeatures) -> StyleInferenceResult:
         """Infer style, falling back to rules if LLM is unavailable."""
         if self._provider is None:

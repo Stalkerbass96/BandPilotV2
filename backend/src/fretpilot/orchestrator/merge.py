@@ -13,9 +13,9 @@ from typing import Any
 from fretpilot.ir.drum_models import DrumProjectIR
 from fretpilot.ir.models import (
     GuitarProjectIR,
+    IRKnowledgeReference,
     IRTempoEvent,
     IRTimeSignatureEvent,
-    IRKnowledgeReference,
     Transformation,
 )
 

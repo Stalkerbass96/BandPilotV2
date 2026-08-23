@@ -21,7 +21,7 @@ import {
   TableRow,
   Typography,
 } from "@mui/material";
-import ArrowForwardIcon from "@mui/icons-material/ArrowForward";
+import { ArrowForwardIcon } from "../icons";
 import { motion } from "framer-motion";
 import type { RepairReport } from "../api/types";
 import { palette } from "../styles/tokens";
@@ -96,7 +96,49 @@ export default function ResultPreview({
             border: "none",
           }}
         />
+        {summary.validation_status && (
+          <Chip
+            label={`Validation: ${summary.validation_status}`}
+            sx={{
+              backgroundColor: summary.validation_status === "passed"
+                ? `${palette.success}15`
+                : `${palette.warning}15`,
+              color: summary.validation_status === "passed" ? palette.success : palette.warning,
+              fontWeight: 500,
+              border: "none",
+            }}
+          />
+        )}
+        {typeof summary.unresolved_note_count === "number" && (
+          <Chip
+            label={`Unresolved: ${summary.unresolved_note_count}`}
+            sx={{
+              backgroundColor: summary.unresolved_note_count === 0
+                ? `${palette.success}15`
+                : `${palette.warning}15`,
+              color: summary.unresolved_note_count === 0 ? palette.success : palette.warning,
+              fontWeight: 500,
+              border: "none",
+            }}
+          />
+        )}
       </Box>
+
+      {summary.validation_issues && summary.validation_issues.length > 0 && (
+        <Alert
+          severity={summary.validation_issues.some((issue) => issue.severity === "error") ? "error" : "warning"}
+          sx={{ borderRadius: 2 }}
+        >
+          <Typography variant="subtitle2">
+            Professional validation issues ({summary.validation_issues.length})
+          </Typography>
+          <ul style={{ margin: 0, paddingLeft: "1.2em" }}>
+            {summary.validation_issues.slice(0, 8).map((issue, index) => (
+              <li key={`${issue.code}-${index}`}>{issue.message}</li>
+            ))}
+          </ul>
+        </Alert>
+      )}
 
       {summary.warnings.length > 0 && (
         <Alert severity="warning" sx={{ borderRadius: 2 }}>

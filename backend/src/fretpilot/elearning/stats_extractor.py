@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
-from typing import Any
 
 from fretpilot.elearning.models import GroundTruthNote, GroundTruthTab, StyleStats
 
@@ -73,6 +72,7 @@ class StatsExtractor:
                 note_overlap_rate=self._compute_note_overlap_rate(all_notes),
                 staccato_rate=self._compute_staccato_rate(all_notes),
                 fret_distribution=self._compute_fret_distribution(all_notes),
+                technique_rates=self._compute_technique_rates(style_tabs, len(all_notes)),
             )
             result[style] = stats
             logger.info(
@@ -214,6 +214,22 @@ class StatsExtractor:
         counter: Counter[int] = Counter(n.fret for n in notes)
         total = len(notes)
         return {f: round(count / total, 6) for f, count in sorted(counter.items())}
+
+    @staticmethod
+    def _compute_technique_rates(
+        tabs: list[GroundTruthTab], total_notes: int
+    ) -> dict[str, float]:
+        """Observed explicit GP technique relations per ground-truth note."""
+
+        if total_notes <= 0:
+            return {}
+        counter = Counter(
+            technique.type for tab in tabs for technique in tab.techniques
+        )
+        return {
+            name: round(count / total_notes, 6)
+            for name, count in sorted(counter.items())
+        }
 
 
 __all__ = ["StatsExtractor"]

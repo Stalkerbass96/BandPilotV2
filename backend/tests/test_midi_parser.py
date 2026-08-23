@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fretpilot.midi.parser import load_midi
 from fretpilot.midi.models import NormalizedTimeline
-
+from fretpilot.midi.parser import load_midi
 from tests.conftest import _make_midi_file
 
 

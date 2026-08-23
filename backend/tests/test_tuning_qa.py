@@ -22,7 +22,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import guitarpro as gp
-import pytest
 
 from fretpilot.engine.context import PipelineContext
 from fretpilot.engine.pipeline import create_pipeline
@@ -52,7 +51,6 @@ from fretpilot.ir.models import (
 from fretpilot.knowledge.tunings import TuningRegistry
 from fretpilot.midi.models import NormalizedTrack
 from fretpilot.midi.parser import load_midi
-
 from tests.conftest import _MockAdvisor, _note, _timeline
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "tokyo_midnight.mid"

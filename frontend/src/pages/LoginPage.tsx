@@ -12,11 +12,12 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import MusicNoteIcon from "@mui/icons-material/MusicNote";
+import { MusicNoteIcon } from "../icons";
 import { motion } from "framer-motion";
 import { authApi } from "../api/client";
 import { useAuthStore } from "../store/auth";
 import { palette } from "../styles/tokens";
+import { apiErrorMessage } from "../utils/apiError";
 
 export default function LoginPage(): JSX.Element {
   const navigate = useNavigate();
@@ -35,8 +36,8 @@ export default function LoginPage(): JSX.Element {
       const result = await authApi.login(email, password);
       setAuth(result.token, result.user);
       navigate("/");
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "Sign in failed."));
     } finally {
       setLoading(false);
     }
@@ -82,13 +83,13 @@ export default function LoginPage(): JSX.Element {
               fontWeight={700}
               sx={{ color: palette.textPrimary }}
             >
-              FretPilot
+              BandPilot
             </Typography>
             <Typography
               variant="body2"
               sx={{ color: palette.textSecondary, mt: 0.5 }}
             >
-              Sign in to repair your guitar MIDI
+              Turn MIDI into playable professional band scores
             </Typography>
           </Box>
 

@@ -26,6 +26,63 @@ class GroundTruthNote:
     duration_beats: float
     is_tie: bool
     velocity: int
+    note_id: str = ""
+    voice: int = 1
+    absolute_start_beat: float = 0.0
+    technique_ids: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class GroundTruthTechnique:
+    """An explicit unary, note-to-note, or note-span technique observation."""
+
+    id: str
+    type: str
+    note_ids: list[str]
+    measure_number: int
+    start_beat: float
+    end_beat: float
+    parameters: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class GroundTruthTrack:
+    """One complete notation track retained from a professional score."""
+
+    id: str
+    name: str
+    program: int
+    is_percussion: bool
+    tuning_pitches: list[int]
+    capo: int
+    notes: list[GroundTruthNote] = field(default_factory=list)
+    techniques: list[GroundTruthTechnique] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class CorpusProvenance:
+    """Dataset rights and split metadata required before knowledge derivation."""
+
+    source_id: str
+    content_sha256: str
+    license_id: str
+    permitted_for_training: bool
+    quality_tier: str = "unreviewed"
+    split: str = "train"
+
+
+@dataclass(slots=True)
+class ProfessionalScoreCorpus:
+    """Loss-minimizing GP representation used by the learning loop."""
+
+    file_path: str
+    title: str
+    artist: str
+    style_label: str
+    tempo_map: list[dict[str, float]]
+    time_signature_map: list[dict[str, int | float]]
+    tracks: list[GroundTruthTrack]
+    provenance: CorpusProvenance | None = None
 
 
 @dataclass(slots=True)
@@ -40,6 +97,7 @@ class GroundTruthTab:
     tuning_pitches: list[int]  # low → high (string 6 → string 1)
     notes: list[GroundTruthNote]
     track_name: str
+    techniques: list[GroundTruthTechnique] = field(default_factory=list)
 
     @property
     def note_count(self) -> int:
@@ -184,6 +242,7 @@ class StyleStats:
     note_overlap_rate: float
     staccato_rate: float
     fret_distribution: dict[int, float]
+    technique_rates: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass(slots=True)
@@ -201,10 +260,15 @@ class DerivedPriors:
     # to "kb2_performance"; drum sticking priors use "drum_kb2_sticking".
     domain: str = "kb2_performance"
     kind: str = "fingering_priors"
+    governance: dict[str, Any] = field(default_factory=dict)
 
 
 __all__ = [
     "GroundTruthNote",
+    "GroundTruthTechnique",
+    "GroundTruthTrack",
+    "CorpusProvenance",
+    "ProfessionalScoreCorpus",
     "GroundTruthTab",
     "AlignedNotePair",
     "EvaluationMetrics",

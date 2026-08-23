@@ -1,9 +1,7 @@
 """Tests for NoteAligner — ground truth vs IR note alignment."""
 
-import pytest
 
 from fretpilot.elearning.models import (
-    AlignedNotePair,
     GroundTruthNote,
     GroundTruthTab,
 )

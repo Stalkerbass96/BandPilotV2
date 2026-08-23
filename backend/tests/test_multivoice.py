@@ -4,8 +4,8 @@
 
 1. **multivoice 分离超范围音符** —— 超范围音符（pitch < 40 或 > 88）在
    IR 里强制归入 voice 2（string/fret=None 保留真相），正常音符留在 voice 1；
-   GP5 导出用占位 fingering + tie 机制，让 voice 2 的音符可见可删、同 onset
-   不同 duration 的和弦 release 不再抛异常。
+   SongIR 将其记录为 unresolved source events；严格 GP5 导出拒绝伪造
+   fingering，同 onset 不同 duration 的可演奏和弦仍使用 tie 分层。
 2. **定弦用户覆盖** —— repair 传 ``tuning_id`` 覆盖自动检测，``GET /tunings``
    暴露 12 套定弦给前端选择器。
 """
@@ -29,6 +29,7 @@ from fretpilot.engine.stages import (
     TieStage,
     VoiceStage,
 )
+from fretpilot.exporters.base import UnsupportedGuitarIR
 from fretpilot.exporters.gp5 import GP5Exporter
 from fretpilot.ir.models import (
     GuitarMeasure,
@@ -44,7 +45,6 @@ from fretpilot.ir.models import (
 from fretpilot.knowledge.engine import KnowledgeEngine
 from fretpilot.midi.models import NormalizedTrack
 from fretpilot.midi.parser import load_midi
-
 from tests.conftest import _make_midi_file, _note, _timeline
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "tokyo_midnight.mid"
@@ -242,7 +242,7 @@ class TestRingingNormalization:
 
 
 class TestGP5MultivoiceExport:
-    """GP5 导出：超范围占位 fingering + 同 onset 不同 duration 用 tie。"""
+    """GP5 导出：拒绝伪造 fingering，同 onset 不同 duration 用 tie。"""
 
     def test_gp5_export_handles_out_of_range(self, tmp_path: Path) -> None:
         events = [
@@ -252,18 +252,9 @@ class TestGP5MultivoiceExport:
         ir = _make_ir(events)
         out_path = tmp_path / "oor.gp5"
 
-        result = GP5Exporter().export(ir, out_path)
-        assert out_path.exists()
-        assert result.note_count >= 2
-
-        with open(out_path, "rb") as f:
-            song = gp.parse(f)
-        measure = song.tracks[0].measures[0]
-        voice2_notes = [n for b in measure.voices[1].beats for n in b.notes]
-        assert voice2_notes, "out-of-range notes should appear in voice 2"
-        # 低音超范围 → string 6（low E）；高音超范围 → string 1（high E）且 fret 超 24。
-        assert any(n.string == 6 for n in voice2_notes)
-        assert any(n.string == 1 and n.value > 24 for n in voice2_notes)
+        with pytest.raises(UnsupportedGuitarIR, match="no playable fingering"):
+            GP5Exporter().export(ir, out_path)
+        assert not out_path.exists()
 
     def test_gp5_export_chord_unequal_duration_tie(self, tmp_path: Path) -> None:
         events = [
@@ -397,21 +388,9 @@ class TestTokyoMidnightMultivoice:
         assert all(not e.fingering.playable for e in voice2)
         assert all(e.fingering.playable for e in voice1)
 
-        # GP5 导出不应抛异常。
+        # 严格导出不能为不可演奏音符伪造弦/品。生产路径会先把这些音符
+        # 放入 SongIR.analysis.unresolved_events，再导出剩余可演奏谱面。
         out_path = tmp_path / "tokyo.gp5"
-        result = GP5Exporter().export(ir, out_path)
-        assert out_path.exists()
-        assert result.note_count > 0
-
-        # 回读校验：导出文件必须能被 guitarpro 重新解析（回归：小节溢出损坏）。
-        # 声部分离后可能产出多轨（Lead + Rhythm），须统计所有轨的音符。
-        with open(out_path, "rb") as f:
-            song = gp.parse(f)
-        parsed_notes = sum(
-            len(b.notes)
-            for track in song.tracks
-            for m in track.measures
-            for v in m.voices
-            for b in v.beats
-        )
-        assert parsed_notes == result.note_count
+        with pytest.raises(UnsupportedGuitarIR, match="no playable fingering"):
+            GP5Exporter().export(ir, out_path)
+        assert not out_path.exists()

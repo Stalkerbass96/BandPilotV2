@@ -99,7 +99,8 @@ Main Content (flex-1)
 ### 3.5 LearningPage — KB 学习
 
 - 上传 GP tabs（拖拽）
-- 选项：style override、auto-promote
+- 选项：style override、授权标识、训练权确认、质量等级；学习结果只生成
+  candidate，必须使用独立验证集完成 A/B 且通过无回退门禁后才能 promote
 - 结果：per-style stats（图表化）+ derived priors（可视化）
 - KB 版本管理：版本列表、active badge、rollback、diff
 

@@ -9,14 +9,15 @@ Detection signals (priority order):
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 
 from fretpilot.midi.models import NormalizedTimeline, NormalizedTrack
 
 # ─── Constants ───
 
-_DRUM_CHANNEL = 10  # MIDI 1-indexed drum channel (channel 10)
+# mido and NormalizedNote use zero-based channels, so human-facing MIDI
+# channel 10 is represented as integer 9.
+_DRUM_CHANNEL = 9
 _DRUM_MIN_PITCH = 35  # GM drum map lower bound
 _DRUM_MAX_PITCH = 81  # GM drum map upper bound
 _MIN_NOTES_FOR_CLASSIFICATION = 4

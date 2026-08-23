@@ -1,11 +1,10 @@
 """Tests for KBWriter — version management and KB writing."""
 
 import json
-import tempfile
-from pathlib import Path
 
 import pytest
 
+from fretpilot.elearning.governance import CorpusGovernanceError
 from fretpilot.elearning.kb_writer import KBWriter
 from fretpilot.elearning.models import DerivedPriors
 
@@ -160,6 +159,73 @@ def test_promote_updates_active(kb_root):
     assert data["entries"][0]["payload"]["open_string_bias"] == 1.5
 
 
+def test_write_is_candidate_only_by_default(kb_root):
+    """Writing a candidate must not silently change active assets or manifest."""
+    writer = KBWriter(kb_root)
+    active_path = kb_root / "assets" / "kb2_performance.json"
+    before = active_path.read_text(encoding="utf-8")
+    derived = [DerivedPriors(
+        style_label="rock",
+        knowledge_id="kb2-rock-lead-performance",
+        payload={"open_string_bias": 1.75},
+        source_ids=["candidate.gp5"],
+        confidence=0.8,
+        derivation_method="statistical_mapping",
+        stats_snapshot={},
+    )]
+
+    writer.write(derived, snapshot_version="2026.09.candidate")
+
+    assert active_path.read_text(encoding="utf-8") == before
+    assert writer.manifest().get("active_version", "") != "2026.09.candidate"
+
+
+def test_candidate_cannot_bypass_promotion_gate_with_rollback(kb_root):
+    writer = KBWriter(kb_root)
+    derived = [DerivedPriors(
+        style_label="rock",
+        knowledge_id="kb2-rock-lead-performance",
+        payload={"open_string_bias": 1.75},
+        source_ids=[f"candidate-{index}.gp5" for index in range(5)],
+        confidence=0.8,
+        derivation_method="statistical_mapping",
+        stats_snapshot={},
+    )]
+    writer.write(derived, snapshot_version="2026.09.candidate")
+
+    with pytest.raises(CorpusGovernanceError, match="cannot bypass"):
+        writer.rollback("2026.09.candidate")
+
+
+def test_evaluated_candidate_promotes_only_after_passing_gate(kb_root):
+    writer = KBWriter(kb_root)
+    derived = [DerivedPriors(
+        style_label="rock",
+        knowledge_id="kb2-rock-lead-performance",
+        payload={"open_string_bias": 1.75},
+        source_ids=[f"candidate-{index}.gp5" for index in range(5)],
+        confidence=0.8,
+        derivation_method="statistical_mapping",
+        stats_snapshot={},
+    )]
+    version = writer.write(derived, snapshot_version="2026.09.candidate")
+    writer.record_evaluation(
+        version,
+        {
+            "result_b_summary": {"successful": 4},
+            "overall_delta": {
+                "overall_fingering_accuracy": 0.01,
+                "pitch_accuracy": 0.0,
+                "chord_shape_match": 0.0,
+                "position_deviation": -0.1,
+            },
+        },
+    )
+    writer.promote_evaluated(version)
+
+    assert writer.manifest()["active_version"] == version
+
+
 def test_list_versions(kb_root):
     """list_versions returns all written versions."""
     writer = KBWriter(kb_root)
@@ -180,6 +246,22 @@ def test_list_versions(kb_root):
     assert len(versions) == 2
     assert versions[0]["version"] == "2026.09.1"
     assert versions[1]["version"] == "2026.09.2"
+
+
+def test_snapshot_source_ids_are_recoverable_for_eval_leak_checks(kb_root):
+    writer = KBWriter(kb_root)
+    derived = [DerivedPriors(
+        style_label="rock",
+        knowledge_id="kb2-rock-lead-performance",
+        payload={"open_string_bias": 1.5},
+        source_ids=["sha256:one", "sha256:two"],
+        confidence=0.8,
+        derivation_method="statistical_mapping",
+        stats_snapshot={},
+    )]
+    writer.write(derived, snapshot_version="2026.09.sources")
+
+    assert {"sha256:one", "sha256:two"} <= writer.source_ids("2026.09.sources")
 
 
 def test_write_stamps_snapshot_version_on_all_domain_files(kb_root):

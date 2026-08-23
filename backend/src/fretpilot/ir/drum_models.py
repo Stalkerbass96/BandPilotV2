@@ -17,9 +17,9 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from fretpilot.ir.models import (
+    IRKnowledgeReference,
     IRTempoEvent,
     IRTimeSignatureEvent,
-    IRKnowledgeReference,
     NoteConfidence,
     PerformanceTiming,
     ScoreTiming,

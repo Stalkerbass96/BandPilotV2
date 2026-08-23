@@ -101,8 +101,6 @@ def _suggest_sticking_for_measure(
 
     results: list[tuple[str, str]] = []
     last_hand: str = ""  # "R" or "L" — tracks alternation
-    pending_double: bool = False  # tracking double-stroke second hit
-
     for i, note in enumerate(notes):
         piece = note.pattern.mapped.piece
         start = note.pattern.mapped.start_beat
@@ -210,4 +208,3 @@ class StickingStage:
 
 
 __all__ = ["StickingStage"]
-

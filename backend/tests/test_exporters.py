@@ -8,10 +8,10 @@ import guitarpro as gp
 import mido
 import pytest
 
-from fretpilot.exporters.ample_midi.profile import AmpleGuitarProfile, load_profile
+from fretpilot.exporters.ample_midi.profile import load_profile
 from fretpilot.exporters.ample_midi.renderer import AmpleMidiExporter
 from fretpilot.exporters.base import ExportResult, UnsupportedGuitarIR
-from fretpilot.exporters.gp5 import GP5Exporter
+from fretpilot.exporters.gp5 import GP5Exporter, _split_duration_ticks
 from fretpilot.ir.models import (
     GuitarMeasure,
     GuitarNoteEvent,
@@ -147,8 +147,33 @@ def _build_two_track_ir() -> GuitarProjectIR:
     return ir
 
 
+def test_split_duration_handles_rest_longer_than_whole_note() -> None:
+    durations = _split_duration_ticks(5 * gp.Duration.quarterTime)
+
+    assert len(durations) >= 2
+    assert sum(duration.time for duration in durations) == 5 * gp.Duration.quarterTime
+
+
 class TestGP5Exporter:
     """Tests for the Guitar Pro 5 exporter."""
+
+    def test_rejects_more_than_seven_strings_with_actionable_error(
+        self, tmp_path: Path
+    ) -> None:
+        ir = _build_simple_ir()
+        ir.tracks[0].tuning = [30, 35, 40, 45, 50, 55, 59, 64]
+
+        with pytest.raises(UnsupportedGuitarIR, match="require 4 to 7 strings"):
+            GP5Exporter().export(ir, tmp_path / "eight-string.gp5")
+
+    def test_rejects_fewer_than_four_pitched_strings_for_gp8_compatibility(
+        self, tmp_path: Path
+    ) -> None:
+        ir = _build_simple_ir()
+        ir.tracks[0].tuning = [40, 45, 50]
+
+        with pytest.raises(UnsupportedGuitarIR, match="require 4 to 7 strings"):
+            GP5Exporter().export(ir, tmp_path / "three-string.gp5")
 
     def test_export_creates_file(self, tmp_path: Path) -> None:
         ir = _build_simple_ir()
@@ -200,6 +225,34 @@ class TestGP5Exporter:
             for beat in voice.beats
         )
         assert total_notes == result.note_count
+
+    def test_voice_two_is_present_in_every_measure_when_track_uses_it(
+        self, tmp_path: Path
+    ) -> None:
+        """AlphaTab requires a continuous second voice across GP5 bars."""
+        ir = _build_simple_ir()
+        voice_two_note = ir.tracks[0].measures[0].events[0]
+        voice_two_note.score.voice = 2
+        ir.tracks[0].measures.append(
+            GuitarMeasure(
+                number=2,
+                start_beat=4.0,
+                duration_beats=4.0,
+                numerator=4,
+                denominator=4,
+                events=[],
+            )
+        )
+
+        out_path = tmp_path / "continuous-voice-two.gp5"
+        GP5Exporter().export(ir, out_path)
+        parsed = gp.parse(out_path)
+
+        assert all(measure.voices[1].beats for measure in parsed.tracks[0].measures)
+        assert all(
+            beat.status is gp.BeatStatus.rest
+            for beat in parsed.tracks[0].measures[1].voices[1].beats
+        )
 
     def test_export_preserves_string_assignment(self, tmp_path: Path) -> None:
         ir = _build_simple_ir()

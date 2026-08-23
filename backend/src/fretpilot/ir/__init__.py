@@ -1,4 +1,4 @@
-"""Guitar IR Schema 1.0 — the core frozen contract."""
+"""Canonical SongIR 2.0 plus versioned guitar/drum working contracts."""
 
 from fretpilot.ir.models import (
     SCHEMA_VERSION,
@@ -17,6 +17,8 @@ from fretpilot.ir.models import (
     Transformation,
 )
 from fretpilot.ir.serde import ir_from_dict, ir_to_dict, load_ir, save_ir
+from fretpilot.ir.song import SONG_SCHEMA_VERSION, SongIR
+from fretpilot.ir.song_serde import load_song_ir, save_song_ir, song_ir_from_dict
 
 __all__ = [
     "SCHEMA_VERSION",
@@ -37,4 +39,9 @@ __all__ = [
     "ir_from_dict",
     "save_ir",
     "load_ir",
+    "SONG_SCHEMA_VERSION",
+    "SongIR",
+    "song_ir_from_dict",
+    "save_song_ir",
+    "load_song_ir",
 ]

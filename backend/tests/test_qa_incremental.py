@@ -16,12 +16,12 @@ from pathlib import Path
 
 import pytest
 
-from fretpilot.api.routes.projects import CleanupInfo, _build_cleaned_track
+from fretpilot.api.routes.projects import CleanupInfo
 from fretpilot.detection.streams import LogicalStream, resolve_streams
 from fretpilot.engine.cleanup import auto_detect_tuning, cleanup_streams
 from fretpilot.engine.context import PipelineContext
 from fretpilot.engine.pipeline import create_pipeline
-from fretpilot.knowledge.tunings import GuitarTuning, TuningRegistry
+from fretpilot.knowledge.tunings import TuningRegistry
 from fretpilot.midi.models import (
     NormalizedNote,
     NormalizedTimeline,
@@ -30,6 +30,7 @@ from fretpilot.midi.models import (
     TimeSignatureEvent,
 )
 from fretpilot.midi.parser import load_midi
+from fretpilot.orchestrator import classify_track_family
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "tokyo_midnight.mid"
 
@@ -37,6 +38,54 @@ _FIXTURE = Path(__file__).parent / "fixtures" / "tokyo_midnight.mid"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _build_cleaned_track(
+    timeline: NormalizedTimeline,
+    primary_track_index: int | None,
+    fallback: NormalizedTrack,
+    tuning=None,
+):
+    """Legacy cleanup harness retained only for its historical QA cases."""
+    drum_indices = {
+        track.index
+        for track in timeline.tracks
+        if track.notes and classify_track_family(track).is_drum
+    }
+    streams = [
+        stream
+        for stream in resolve_streams(timeline)
+        if not any(index in drum_indices for index in stream.source_track_indices)
+    ]
+    if tuning is None:
+        tuning = auto_detect_tuning(streams) if streams else None
+    result = (
+        cleanup_streams(
+            streams, timeline=timeline, tuning=tuning, out_of_range_mode="flag"
+        )
+        if streams
+        else None
+    )
+    if result is None or not result.streams:
+        return fallback, None
+    primary = max(result.streams, key=lambda stream: stream.note_count)
+    cleaned = NormalizedTrack(
+        index=primary_track_index or 0,
+        name=primary.track_name,
+        notes=list(primary.notes),
+        instrument_name=primary.instrument_name,
+        program=primary.program,
+    )
+    info = CleanupInfo(
+        tuning_id=tuning.id,
+        tuning_display_name=tuning.display_name,
+        tempo_dedup_count=result.tempo_dedup_count,
+        out_of_range_count=result.out_of_range_count,
+        velocity_remapped=result.velocity_remapped,
+        overlaps_truncated=result.overlaps_truncated,
+        total_actions=len(result.actions),
+    )
+    return cleaned, info
 
 def _note(
     pitch: int,
@@ -232,7 +281,6 @@ class TestBuildCleanedTrackSafety:
         列表级增删隔离。验证 append/pop 不回传到 stream.notes。
         """
         notes = [_note(60, 0.0, 1.0), _note(62, 1.0, 1.0)]
-        stream = _stream(notes)
         timeline = _make_single_guitar_timeline(notes)
 
         cleaned_track, _info = _build_cleaned_track(timeline, 0, _fallback_track())
@@ -521,9 +569,6 @@ class TestRealSampleEndToEnd:
     def test_full_pipeline_no_crash_and_valid_ir(self) -> None:
         """完整 pipeline 执行不抛异常，IR 有 tracks/measures/notes > 0。"""
         timeline = load_midi(_FIXTURE)
-        report = type(
-            "R", (), {"primary_guitar_track_index": 0, "primary_classification": None}
-        )()
         # 用 _build_cleaned_track 走 cleanup 全流程。
         cleaned_track, _info = _build_cleaned_track(
             timeline, 0, timeline.tracks[0]

@@ -17,8 +17,14 @@ from typing import Iterable
 import guitarpro as gp
 
 from fretpilot.exporters.base import ExportResult, UnsupportedGuitarIR
-from fretpilot.ir.drum_models import DrumMeasure, DrumNoteEvent, DrumTrackIR, DrumProjectIR
+from fretpilot.ir.drum_models import DrumMeasure, DrumNoteEvent, DrumProjectIR, DrumTrackIR
 from fretpilot.ir.models import GuitarMeasure, GuitarNoteEvent, GuitarProjectIR
+
+# Guitar Pro 8 rejects GP5 pitched tracks with fewer than four strings even
+# though PyGuitarPro can serialize and parse them.  Keep this compatibility
+# limit explicit so an export can never report success for a file GP8 refuses.
+GP5_MIN_PITCHED_STRINGS = 4
+GP5_MAX_PITCHED_STRINGS = 7
 
 
 def _build_duration_candidates() -> list[gp.Duration]:
@@ -52,11 +58,15 @@ _DURATION_CANDIDATES = _build_duration_candidates()
 @lru_cache(maxsize=512)
 def _split_duration_ticks(total_ticks: int) -> tuple[gp.Duration, ...]:
     """Split a tick count into the minimal set of GP durations."""
+    # PyGuitarPro derives some measure ends with true division for unusual
+    # meters, so an integral tick count can arrive as ``960.0``. Its
+    # Duration.fromTime implementation requires an integer/Fraction.
+    total_ticks = int(round(total_ticks))
     if total_ticks <= 0:
         raise UnsupportedGuitarIR("GP5 duration must be positive.")
     try:
         return (gp.Duration.fromTime(total_ticks),)
-    except (ValueError, OverflowError):
+    except (AttributeError, ValueError, OverflowError):
         pass
 
     best: list[gp.Duration] | None = None
@@ -92,7 +102,7 @@ def _make_rest_beats(
 ) -> list[gp.Beat]:
     """Create rest beats filling a gap."""
     beats: list[gp.Beat] = []
-    cursor = absolute_start
+    cursor = int(round(absolute_start))
     for duration in _split_duration_ticks(duration_ticks):
         beat = gp.Beat(voice, duration=duration, start=cursor, status=gp.BeatStatus.rest)
         beats.append(beat)
@@ -149,74 +159,24 @@ def _group_events_by_onset(
     return sorted(grouped.items(), key=lambda item: item[0])
 
 
-# 各弦的空弦音高（string number → MIDI pitch），用于超范围音符的占位 fingering。
-_OPEN_PITCHES = {6: 40, 5: 45, 4: 50, 3: 55, 2: 59, 1: 64}
-
-
-def _placeholder_fingering(pitch: int, used: set[int]) -> tuple[int, int]:
-    """Return a placeholder (string, fret) for an out-of-range pitch.
-
-    IR 语义：unplayable 音符保持 string/fret=None（真相）。GP5 是"呈现"层，
-    需要一个可写入的占位 fingering，让超范围音符出现在 voice 2 中供用户
-    一眼识别并批量删除：
-
-    - pitch < 最低弦 E2（40）：fret = pitch - 空弦音高（负数）；
-    - pitch > 最高弦 E6 24 品（88）：fret = pitch - 空弦音高（超过 24）。
-
-    优先用最贴近的弦（低音用 low E 弦 6、高音用 high E 弦 1）；当该弦已被
-    同和弦其他音符占用时，顺延到相邻未占用弦，保证 fret 仍超范围。
-    """
-    order = (6, 5, 4, 3, 2, 1) if pitch < 40 else (1, 2, 3, 4, 5, 6)
-    for string in order:
-        if string not in used:
-            return string, pitch - _OPEN_PITCHES[string]
-    # 极端情况（和弦超过 6 根弦）：退回最贴近的弦，fret 仍超范围。
-    return (6 if pitch < 40 else 1, pitch - (40 if pitch < 40 else 64))
-
-
 def _chord_fingerings(
     events: list[GuitarNoteEvent],
     warnings: list[str],
 ) -> list[tuple[GuitarNoteEvent, int, int]]:
-    """Assign distinct (string, fret) to every note in a same-onset chord.
-
-    IR 的 fingering 是"真相"，但同 onset 和弦里多根音符可能落到同一根弦
-    （脏 MIDI 量化后把琶音压成和弦导致），而 Guitar Pro 无法表示同弦重复音
-    （写出的 .gp5 会损坏）。本函数在呈现层做两件事：
-
-    1. unplayable 音符（string/fret=None）用占位 fingering（voice 2 专用）；
-    2. 与已占用弦冲突的音符，改到 fretboard 上第一个未被占用的合法候选位。
-
-    当和弦音符数超过可用弦数（无法分配到不同弦，例如 6 个低音音符挤不进
-    5 根可用弦）时，丢弃无法落弦的音符并记录告警，保证导出的 .gp5 始终可被
-    Guitar Pro 读取、绝不出损坏文件。
-    """
-    from fretpilot.guitar.fretboard import candidate_positions
-
+    """Read validated chord fingerings without repairing score semantics."""
     used: set[int] = set()
     pairs: list[tuple[GuitarNoteEvent, int, int]] = []
     for event in events:
         string = event.fingering.string
         fret = event.fingering.fret
         if string is None or fret is None:
-            string, fret = _placeholder_fingering(event.pitch, used)
-        elif string in used:
-            alternate = next(
-                (p for p in candidate_positions(event.pitch) if p.string not in used),
-                None,
+            raise UnsupportedGuitarIR(
+                f"Note {event.id} has no playable fingering; validate the score before export."
             )
-            if alternate is not None:
-                string, fret = alternate.string, alternate.fret
-            else:
-                warnings.append(
-                    f"Dropped note {event.id}: chord exceeds playable strings."
-                )
-                continue
         if string in used:
-            warnings.append(
-                f"Dropped note {event.id}: no free string in chord."
+            raise UnsupportedGuitarIR(
+                f"Chord assigns multiple notes to string {string}; exporter will not rewrite it."
             )
-            continue
         used.add(string)
         pairs.append((event, string, fret))
     return pairs
@@ -244,13 +204,15 @@ def _populate_voice(
     gp_measure: gp.Measure,
     voice_number: int,
     note_lookup: dict[str, gp.Note],
+    *,
+    fill_empty: bool = False,
 ) -> tuple[int, list[str]]:
     """Populate a single voice with beats and notes."""
     warnings: list[str] = []
     voice = gp_measure.voices[voice_number - 1]
     voice.beats.clear()
     grouped = _group_events_by_onset(ir_measure, voice_number)
-    if not grouped and voice_number == 2:
+    if not grouped and voice_number == 2 and not fill_empty:
         return 0, warnings
 
     cursor = gp_measure.start
@@ -358,15 +320,46 @@ def _populate_beat_group(
     return note_count, cursor - start_cursor
 
 
+def _gp5_safe_text(value: str, *, fallback: str, maximum: int) -> str:
+    """Return metadata representable by GP5's legacy cp1252 byte strings."""
+    safe = value.encode("cp1252", errors="replace").decode("cp1252")[:maximum]
+    if not safe.strip() or not any(character != "?" for character in safe if not character.isspace()):
+        return fallback[:maximum]
+    return safe
+
+
+def _requires_metadata_fallback(value: str) -> bool:
+    try:
+        value.encode("cp1252")
+    except UnicodeEncodeError:
+        return True
+    return False
+
+
 def _configure_track(gp_track: gp.Track, ir_track, number: int) -> None:
     """Apply name / fret-count / tuning from an IR track onto a GP track."""
+    if not GP5_MIN_PITCHED_STRINGS <= len(ir_track.tuning) <= GP5_MAX_PITCHED_STRINGS:
+        raise UnsupportedGuitarIR(
+            f"GP5 pitched tracks require {GP5_MIN_PITCHED_STRINGS} to "
+            f"{GP5_MAX_PITCHED_STRINGS} strings for Guitar Pro compatibility, but "
+            f"track {ir_track.name!r} uses {len(ir_track.tuning)}. Choose a "
+            "compatible tuning or export MusicXML."
+        )
     gp_track.number = number
-    gp_track.name = ir_track.name[:40] or "FretPilot Guitar"
+    gp_track.name = _gp5_safe_text(
+        ir_track.name,
+        fallback=f"FretPilot Track {number}",
+        maximum=40,
+    )
     gp_track.fretCount = ir_track.fret_count
     gp_track.strings = [
         gp.GuitarString(number=i + 1, value=pitch)
         for i, pitch in enumerate(reversed(ir_track.tuning))
     ]
+    if ir_track.role == "bass":
+        gp_track.channel.instrument = 33
+    elif ir_track.role == "keys":
+        gp_track.channel.instrument = 0
 
 
 def _configure_song(project: GuitarProjectIR) -> gp.Song:
@@ -390,7 +383,7 @@ def _configure_song(project: GuitarProjectIR) -> gp.Song:
             )
 
     song = gp.Song()
-    song.title = project.title
+    song.title = _gp5_safe_text(project.title, fallback="BandPilot", maximum=127)
     if project.tempo_map:
         song.tempo = max(1, int(round(project.tempo_map[0].bpm)))
     song.tempoName = "FretPilot"
@@ -437,6 +430,14 @@ class GP5Exporter:
 
         song = _configure_song(ir)
         warnings: list[str] = []
+        if any(
+            _requires_metadata_fallback(value)
+            for value in (ir.title, *(track.name for track in ir.tracks))
+        ):
+            warnings.append(
+                "GP5 uses legacy cp1252 metadata; unsupported Unicode title/track "
+                "characters were replaced. MusicXML preserves full Unicode metadata."
+            )
         total_note_count = 0
 
         # ``note_lookup`` is per-track so hammer_on/pull_off/slide links never
@@ -444,12 +445,21 @@ class GP5Exporter:
         for ir_track, gp_track in zip(ir.tracks, song.tracks, strict=True):
             note_lookup: dict[str, gp.Note] = {}
             note_count = 0
+            uses_voice_two = any(
+                event.score.voice == 2
+                for measure in ir_track.measures
+                for event in measure.events
+            )
             for ir_measure, gp_measure in zip(
                 ir_track.measures, gp_track.measures, strict=True
             ):
                 for voice_number in (1, 2):
                     exported, voice_warnings = _populate_voice(
-                        ir_measure, gp_measure, voice_number, note_lookup
+                        ir_measure,
+                        gp_measure,
+                        voice_number,
+                        note_lookup,
+                        fill_empty=voice_number == 2 and uses_voice_two,
                     )
                     note_count += exported
                     warnings.extend(voice_warnings)
@@ -497,7 +507,11 @@ _DRUM_PIECE_TO_PITCH: dict[str, int] = {
 def _configure_drum_track(gp_track: gp.Track, ir_track: DrumTrackIR, number: int) -> None:
     """Configure a GP track as a percussion/drum track."""
     gp_track.number = number
-    gp_track.name = ir_track.name[:40] or "Drums"
+    gp_track.name = _gp5_safe_text(
+        ir_track.name,
+        fallback=f"Drums {number}",
+        maximum=40,
+    )
     # Percussion track: 6-line staff representing drum pieces
     gp_track.isPercussionTrack = True
     gp_track.strings = [
@@ -530,6 +544,13 @@ def _populate_drum_voice(
     note_count = 0
 
     for absolute_start_beat, events in grouped_list:
+        events = sorted(events, key=lambda event: (event.pitch, event.id))
+        if len(events) > len(gp_measure.track.strings):
+            raise UnsupportedGuitarIR(
+                f"Drum onset at beat {absolute_start_beat} contains {len(events)} "
+                f"hits but GP5 exposes only {len(gp_measure.track.strings)} "
+                "simultaneous virtual strings."
+            )
         start_tick = gp_measure.start + _beats_to_ticks(
             absolute_start_beat - ir_measure.start_beat
         )
@@ -551,7 +572,12 @@ def _populate_drum_voice(
                 status=gp.BeatStatus.normal,
             )
             voice.beats.append(beat)
-            for event in events:
+            # GP5 encodes notes in a beat using a string bitmask. Writing
+            # multiple drum hits to the same virtual string emits extra note
+            # payloads that the reader cannot count and corrupts the rest of
+            # the file. Drum strings are purely serialization slots, so assign
+            # one distinct slot per simultaneous hit.
+            for virtual_string, event in enumerate(events, start=1):
                 pitch = _DRUM_PIECE_TO_PITCH.get(
                     event.piece, event.pitch
                 )
@@ -561,7 +587,7 @@ def _populate_drum_voice(
                     velocity=max(
                         1, min(127, event.performance.velocity)
                     ),
-                    string=1,
+                    string=virtual_string,
                     type=gp.NoteType.normal,
                 )
                 # Apply technique as effect
@@ -582,7 +608,9 @@ def _populate_drum_voice(
     return note_count, warnings
 
 
-def _fill_rest_measure(gp_measure: gp.Measure) -> None:
+def _fill_rest_measure(
+    gp_measure: gp.Measure, *, fill_voice_two: bool = False
+) -> None:
     """Fill a GP measure's voice 1 with a full-measure rest.
 
     BandPilot guitar and drum IRs are produced by independent pipelines and
@@ -595,6 +623,16 @@ def _fill_rest_measure(gp_measure: gp.Measure) -> None:
     voice.beats.extend(
         _make_rest_beats(voice, gp_measure.start, gp_measure.end - gp_measure.start)
     )
+    if fill_voice_two:
+        second_voice = gp_measure.voices[1]
+        second_voice.beats.clear()
+        second_voice.beats.extend(
+            _make_rest_beats(
+                second_voice,
+                gp_measure.start,
+                gp_measure.end - gp_measure.start,
+            )
+        )
 
 
 def _measure_by_number(
@@ -640,7 +678,7 @@ def export_bandpilot(
     # Use guitar IR as the base if available, otherwise create from drum IR.
     base_ir = guitar_ir if guitar_ir is not None else drum_ir
     song = gp.Song()
-    song.title = base_ir.title
+    song.title = _gp5_safe_text(base_ir.title, fallback="BandPilot", maximum=127)
     if base_ir.tempo_map:
         song.tempo = max(1, int(round(base_ir.tempo_map[0].bpm)))
     song.tempoName = "BandPilot"
@@ -690,6 +728,16 @@ def export_bandpilot(
         start = header.end
 
     warnings: list[str] = []
+    metadata_values = [
+        base_ir.title,
+        *(track.name for track in guitar_tracks),
+        *(track.name for track in drum_tracks),
+    ]
+    if any(_requires_metadata_fallback(value) for value in metadata_values):
+        warnings.append(
+            "GP5 uses legacy cp1252 metadata; unsupported Unicode title/track "
+            "characters were replaced. MusicXML preserves full Unicode metadata."
+        )
     total_note_count = 0
     track_number = 1
 
@@ -703,14 +751,25 @@ def export_bandpilot(
         _configure_track(gp_track, ir_track, track_number)
 
         note_lookup: dict[str, gp.Note] = {}
+        uses_voice_two = any(
+            event.score.voice == 2
+            for measure in ir_track.measures
+            for event in measure.events
+        )
         for gp_measure in gp_track.measures:
             ir_measure = _measure_by_number(ir_track.measures, gp_measure)
             if ir_measure is None:
-                _fill_rest_measure(gp_measure)
+                _fill_rest_measure(
+                    gp_measure, fill_voice_two=uses_voice_two
+                )
                 continue
             for voice_number in (1, 2):
                 exported, voice_warnings = _populate_voice(
-                    ir_measure, gp_measure, voice_number, note_lookup
+                    ir_measure,
+                    gp_measure,
+                    voice_number,
+                    note_lookup,
+                    fill_empty=voice_number == 2 and uses_voice_two,
                 )
                 total_note_count += exported
                 warnings.extend(voice_warnings)

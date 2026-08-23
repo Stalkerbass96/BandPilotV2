@@ -8,15 +8,16 @@ Runs in degraded mode (``advisor=None``) to avoid LLM dependency.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
+from fretpilot.detection.classifier import classify_timeline
+from fretpilot.detection.streams import resolve_streams
 from fretpilot.engine.cleanup import auto_detect_tuning, cleanup_streams
 from fretpilot.engine.context import PipelineContext
 from fretpilot.engine.pipeline import create_pipeline
-from fretpilot.detection.classifier import classify_timeline
-from fretpilot.detection.streams import resolve_streams
 from fretpilot.ir.models import GuitarProjectIR
 from fretpilot.knowledge.tunings import GuitarTuning
-from fretpilot.midi.models import NormalizedTrack, NormalizedTimeline
+from fretpilot.midi.models import NormalizedTimeline, NormalizedTrack
 from fretpilot.midi.parser import load_midi
 
 logger = logging.getLogger("fretpilot.elearning.pipeline_runner")
@@ -65,7 +66,10 @@ class PipelineRunner:
         cleaned_track = self._build_cleaned_track(timeline, streams, tuning)
 
         # Build and run pipeline
-        pipeline = create_pipeline(self._knowledge_dir) if self._knowledge_dir else create_pipeline()
+        knowledge_dir = self._knowledge_dir or str(
+            Path(__file__).resolve().parent.parent / "knowledge" / "assets"
+        )
+        pipeline = create_pipeline(knowledge_dir)
         track_role = (
             report.primary_classification.guitar_role
             if report.primary_classification

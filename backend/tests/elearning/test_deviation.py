@@ -1,13 +1,11 @@
 """Tests for DeviationCalculator — metric computation."""
 
-import pytest
 
 from fretpilot.elearning.deviation import DeviationCalculator
 from fretpilot.elearning.models import (
     AlignedNotePair,
     GroundTruthNote,
     GroundTruthTab,
-    EvaluationMetrics,
 )
 from fretpilot.ir.models import (
     GuitarMeasure,

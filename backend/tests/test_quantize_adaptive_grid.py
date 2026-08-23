@@ -23,7 +23,6 @@ from fretpilot.engine.stages.quantize import (
 )
 from fretpilot.knowledge.engine import KnowledgeEngine
 from fretpilot.midi.models import NormalizedTrack
-
 from tests.conftest import _MockAdvisor, _note, _timeline
 
 _FIXTURE = Path(__file__).parent / "fixtures" / "tokyo_midnight.mid"

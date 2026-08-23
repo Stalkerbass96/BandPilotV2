@@ -22,7 +22,7 @@ from fretpilot.engine.cleanup import (
     remap_flat_velocity,
     truncate_overlaps,
 )
-from fretpilot.knowledge.tunings import GuitarTuning, TuningRegistry
+from fretpilot.knowledge.tunings import TuningRegistry
 from fretpilot.midi.models import NormalizedNote
 from fretpilot.midi.parser import load_midi
 

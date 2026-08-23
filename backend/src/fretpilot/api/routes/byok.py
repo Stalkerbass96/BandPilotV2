@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
 from fretpilot.ai.crypto import KeyVault, KeyVaultError
 from fretpilot.ai.models import AIProviderError
 from fretpilot.ai.providers.openai_compatible import OpenAICompatibleAdvisor
+from fretpilot.ai.url_security import validate_provider_base_url
 from fretpilot.api.deps import get_current_user, get_key_vault_dependency
 from fretpilot.db.models import ByokConfig, User
 from fretpilot.db.session import get_db
@@ -17,10 +20,15 @@ router = APIRouter()
 
 
 class ByokRequest(BaseModel):
-    provider: str = Field(default="openai_compatible")
+    provider: Literal["openai_compatible"] = "openai_compatible"
     api_key: str = Field(min_length=1, max_length=512)
-    base_url: str | None = Field(default=None)
-    model: str | None = Field(default=None)
+    base_url: str | None = Field(default=None, max_length=2048)
+    model: str | None = Field(default=None, max_length=200)
+
+    @field_validator("base_url")
+    @classmethod
+    def validate_base_url(cls, value: str | None) -> str | None:
+        return validate_provider_base_url(value) if value else value
 
 
 class ByokResponse(BaseModel):
@@ -108,7 +116,10 @@ def save_byok(
 
 
 @router.post("/test", response_model=ByokTestResponse)
-def test_byok(req: ByokRequest) -> ByokTestResponse:
+def test_byok(
+    req: ByokRequest,
+    user: User = Depends(get_current_user),
+) -> ByokTestResponse:
     """Test the LLM connection with the provided credentials."""
     advisor = OpenAICompatibleAdvisor(
         api_key=req.api_key,
@@ -116,7 +127,6 @@ def test_byok(req: ByokRequest) -> ByokTestResponse:
         base_url=_resolve_base_url(req.base_url),
     )
     try:
-        from fretpilot.ai.advisor import extract_features
         from fretpilot.ai.models import TrackFeatures
 
         features = TrackFeatures(

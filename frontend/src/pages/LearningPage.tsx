@@ -7,7 +7,7 @@
  *  Sections:
  *   1. Hero header
  *   2. Upload zone (drag & drop; .gp3/.gp4/.gp5/.zip)
- *   3. Learn options (style override, auto-promote)
+ *   3. Learn options (style override; output is always a candidate)
  *   4. Results: summary chips, per-style stats, derived priors
  *   5. KB version management: version list, active badge, rollback, diff
  */
@@ -19,23 +19,26 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Checkbox,
   FormControlLabel,
   MenuItem,
   Select,
-  Switch,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
   Tooltip,
   Typography,
 } from "@mui/material";
-import UploadFileIcon from "@mui/icons-material/UploadFile";
-import SchoolIcon from "@mui/icons-material/School";
-import HistoryIcon from "@mui/icons-material/History";
-import CompareArrowsIcon from "@mui/icons-material/CompareArrows";
+import {
+  CompareArrowsIcon,
+  HistoryIcon,
+  SchoolIcon,
+  UploadFileIcon,
+} from "../icons";
 import { motion } from "framer-motion";
 import { elearningApi } from "../api/client";
 import type {
@@ -47,6 +50,7 @@ import type {
   VersionsResponse,
 } from "../api/types";
 import { palette } from "../styles/tokens";
+import { apiErrorMessage } from "../utils/apiError";
 
 const STYLE_OPTIONS = [
   { value: "auto", label: "Auto-detect (filename)" },
@@ -68,8 +72,10 @@ export default function LearningPage(): JSX.Element {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [style, setStyle] = useState("auto");
-  const [promote, setPromote] = useState(true);
   const [mode, setMode] = useState<LearnMode>("guitar");
+  const [licenseId, setLicenseId] = useState("");
+  const [rightsConfirmed, setRightsConfirmed] = useState(false);
+  const [qualityTier, setQualityTier] = useState<"reviewed" | "expert">("reviewed");
 
   const [learning, setLearning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -119,12 +125,16 @@ export default function LearningPage(): JSX.Element {
       const styleArg = style === "auto" ? undefined : style;
       const data =
         mode === "drums"
-          ? await elearningApi.learnDrum(files, styleArg, promote)
-          : await elearningApi.learn(files, styleArg, promote);
+          ? await elearningApi.learnDrum(
+              files, styleArg, false, licenseId, rightsConfirmed, qualityTier,
+            )
+          : await elearningApi.learn(
+              files, styleArg, false, licenseId, rightsConfirmed, qualityTier,
+            );
       setResult(data);
       await loadVersions();
-    } catch (err) {
-      setError((err as Error).message || "Learning failed");
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "Learning failed."));
     } finally {
       setLearning(false);
     }
@@ -135,8 +145,8 @@ export default function LearningPage(): JSX.Element {
     try {
       await elearningApi.rollback(version);
       await loadVersions();
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "Rollback failed."));
     } finally {
       setRollbackBusy(null);
     }
@@ -148,8 +158,8 @@ export default function LearningPage(): JSX.Element {
     setDiffBusy(true);
     try {
       setDiff(await elearningApi.diff(items[1].version, items[0].version));
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "Version comparison failed."));
     } finally {
       setDiffBusy(false);
     }
@@ -303,9 +313,35 @@ export default function LearningPage(): JSX.Element {
             </MenuItem>
           ))}
         </Select>
+        <Alert severity="info" sx={{ borderRadius: 2 }}>
+          Learning creates an isolated candidate. Promotion requires an independent
+          A/B corpus and must pass the no-regression gate.
+        </Alert>
+        <TextField
+          size="small"
+          label="License / rights ID"
+          value={licenseId}
+          onChange={(event) => setLicenseId(event.target.value)}
+          required
+          sx={{ minWidth: 190 }}
+        />
+        <Select
+          size="small"
+          value={qualityTier}
+          onChange={(event) => setQualityTier(event.target.value as "reviewed" | "expert")}
+          sx={{ minWidth: 120, fontSize: 13 }}
+        >
+          <MenuItem value="reviewed">Reviewed</MenuItem>
+          <MenuItem value="expert">Expert</MenuItem>
+        </Select>
         <FormControlLabel
-          control={<Switch checked={promote} onChange={(e) => setPromote(e.target.checked)} />}
-          label="Promote to active"
+          control={
+            <Checkbox
+              checked={rightsConfirmed}
+              onChange={(event) => setRightsConfirmed(event.target.checked)}
+            />
+          }
+          label="Training rights confirmed"
           sx={{ "& .MuiFormControlLabel-label": { color: palette.textSecondary, fontSize: 13 } }}
         />
         <Box className="flex-1" />
@@ -316,7 +352,9 @@ export default function LearningPage(): JSX.Element {
         )}
         <Button
           variant="contained"
-          disabled={files.length === 0 || learning}
+          disabled={
+            files.length === 0 || learning || !licenseId.trim() || !rightsConfirmed
+          }
           startIcon={learning ? <CircularProgress size={16} color="inherit" /> : <SchoolIcon />}
           onClick={() => void handleLearn()}
           sx={{
@@ -545,6 +583,7 @@ export default function LearningPage(): JSX.Element {
                       <Box className="flex items-center gap-1.5">
                         {v.version}
                         {active && <Chip size="small" label="active" sx={{ backgroundColor: `${palette.brandPrimary}15`, color: palette.brandPrimary, border: "none", fontWeight: 600, fontSize: 10 }} />}
+                        {!active && v.status && <Chip size="small" label={v.status} sx={{ backgroundColor: palette.subtle, color: palette.textTertiary, border: "none", fontSize: 10 }} />}
                       </Box>
                     </TableCell>
                     <TableCell sx={{ color: palette.textSecondary, fontSize: 12 }}>
@@ -554,7 +593,7 @@ export default function LearningPage(): JSX.Element {
                     <TableCell align="right" sx={{ color: palette.textSecondary }}>{v.total_sources}</TableCell>
                     <TableCell align="right" sx={{ color: palette.textSecondary }}>{pct(v.avg_confidence ?? 0)}</TableCell>
                     <TableCell align="right">
-                      {!active && (
+                      {!active && (v.status === "promoted" || !v.status) && (
                         <Button
                           size="small"
                           disabled={rollbackBusy !== null}
