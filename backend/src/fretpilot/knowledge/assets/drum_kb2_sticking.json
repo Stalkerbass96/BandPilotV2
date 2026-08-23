@@ -1,5 +1,5 @@
 {
-  "snapshot_version": "2026.08.18-123416",
+  "snapshot_version": "2026.08.23-guitarset-v1",
   "schema_version": "1",
   "status": "approved",
   "entries": [
@@ -8,7 +8,7 @@
       "domain": "drum_kb2_sticking",
       "kind": "sticking_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "right_hand_bias": 1.4,
@@ -25,7 +25,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-sticking"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     },
@@ -34,7 +35,7 @@
       "domain": "drum_kb2_sticking",
       "kind": "sticking_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "right_hand_bias": 1.2,
@@ -51,7 +52,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-sticking"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     },
@@ -60,7 +62,7 @@
       "domain": "drum_kb2_sticking",
       "kind": "sticking_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "right_hand_bias": 1.0,
@@ -77,7 +79,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-sticking"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     },
@@ -86,7 +89,7 @@
       "domain": "drum_kb2_sticking",
       "kind": "sticking_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "right_hand_bias": 1.1,
@@ -103,7 +106,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-sticking"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     },
@@ -112,7 +116,7 @@
       "domain": "drum_kb2_sticking",
       "kind": "sticking_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "right_hand_bias": 1.0,
@@ -129,7 +133,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-sticking"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     }

@@ -130,8 +130,12 @@ The current values and milestone targets live only in
   calibrated confidence/capo inference.
 - Professional fingering and technique recovery remain below the product's
   final quality target even though hard playability validation is enforced.
-- The supplied GP corpus cannot train or promote knowledge until rights,
-  review tier, content hash and dataset split metadata are complete.
+- Guitar performance priors now have a reproducible public GuitarSet baseline
+  with performer-disjoint train/validation/test splits and CC BY 4.0
+  attribution. Coverage is still limited to its five styles and two roles.
+- The supplied GP corpus is hash-inventoried and usable for private evaluation,
+  but cannot train or promote knowledge until rights, review tier and dataset
+  split metadata are complete.
 - PyGuitarPro cannot parse legacy Guitar Pro 2.21 `.gtp` files.
 - Only Ample Guitar Eclipse has a production sound-profile exporter.
 

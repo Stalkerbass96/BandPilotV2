@@ -1,5 +1,5 @@
 {
-  "snapshot_version": "2026.08.18-123416",
+  "snapshot_version": "2026.08.23-guitarset-v1",
   "schema_version": "2",
   "status": "approved",
   "changelog": [
@@ -34,7 +34,7 @@
       "domain": "kb4_instruments",
       "kind": "instrument_profile",
       "schema_version": "2",
-      "knowledge_version": "2026.08.3",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "profile_id": "ample_eclipse",
@@ -377,7 +377,7 @@
       "domain": "kb4_instruments",
       "kind": "instrument_profile",
       "schema_version": "2",
-      "knowledge_version": "2026.08.4",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "profile_id": "ample_sc",

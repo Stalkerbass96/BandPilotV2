@@ -305,3 +305,43 @@ class TestExtractIntegration:
         extractor = StatsExtractor()
         result = extractor.extract(tabs)
         assert "unknown" not in result
+
+    def test_same_onset_in_different_files_does_not_create_fake_chord(self):
+        """Regression: files in one style must never share onset groups."""
+        tabs = [
+            _tab([_note(1, 0.0, 40, 6, 0)], path="one.gp5"),
+            _tab([_note(1, 0.0, 45, 5, 0)], path="two.gp5"),
+        ]
+
+        stats = StatsExtractor().extract(tabs)["rock"]
+
+        assert stats.chord_shape_top_k == {}
+        assert stats.avg_string_skip == 0.0
+        assert stats.note_overlap_rate == 0.0
+
+    def test_transitions_do_not_cross_file_boundaries(self):
+        tabs = [
+            _tab(
+                [_note(1, 0.0, 40, 6, 0), _note(1, 1.0, 45, 5, 0)],
+                path="one.gp5",
+            ),
+            _tab(
+                [_note(1, 0.0, 64, 1, 0), _note(1, 1.0, 59, 2, 0)],
+                path="two.gp5",
+            ),
+        ]
+
+        stats = StatsExtractor().extract(tabs)["rock"]
+
+        assert stats.avg_string_skip == 1.0
+
+    def test_overlap_respects_non_four_four_time_signature(self):
+        tab = _tab(
+            [_note(1, 2.8, 64, 1, 0, dur=0.4), _note(2, 0.0, 65, 1, 1)],
+            path="three-four.gp5",
+        )
+        tab.time_signature = (3, 4)
+
+        stats = StatsExtractor().extract([tab])["rock"]
+
+        assert stats.note_overlap_rate == 1.0

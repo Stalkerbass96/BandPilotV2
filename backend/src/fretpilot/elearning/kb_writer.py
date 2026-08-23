@@ -47,6 +47,10 @@ _KB_DOMAIN_FILES = (
     "drum_kb1_arrangement.json",
     "drum_kb2_sticking.json",
     "drum_kb3_notation.json",
+    "bass_kb2_performance.json",
+    "keys_kb2_performance.json",
+    "performance_profiles.json",
+    "source_catalog.json",
 )
 # Manifest filename.
 _MANIFEST_FILENAME = "version_manifest.json"

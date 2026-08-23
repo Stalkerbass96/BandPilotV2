@@ -161,6 +161,16 @@ def _encode_shape(positions: list[FretPosition]) -> str:
     return ",".join(f"s{p.string}f{p.fret}" for p in ordered)
 
 
+def _encode_shape_template(positions: list[FretPosition]) -> str:
+    """Encode a chord by string and fret offsets from its lowest fret."""
+
+    ordered = sorted(positions, key=lambda position: position.string)
+    anchor = min(position.fret for position in ordered)
+    return ",".join(
+        f"s{position.string}+{position.fret - anchor}" for position in ordered
+    )
+
+
 def _is_power_chord(positions: list[FretPosition]) -> bool:
     """True if *positions* form a root+fifth (perfect-fifth interval)."""
     if len(positions) != 2:
@@ -173,6 +183,7 @@ def _chord_combo_adjustment(
     positions: list[FretPosition],
     priors: dict[str, float],
     chord_shapes: dict[str, int] | None = None,
+    chord_shape_templates: dict[str, int] | None = None,
 ) -> float:
     """Chord-level score adjustment (negative = bonus, positive = penalty).
 
@@ -201,7 +212,8 @@ def _chord_combo_adjustment(
     frets = [p.fret for p in positions if p.fret > 0]
     if frets:
         span = max(frets) - min(frets)
-        if span > _MAX_HAND_SPAN:
+        max_hand_span = int(priors.get("max_fret_span", _MAX_HAND_SPAN))
+        if span > max_hand_span:
             # Physically impossible — huge penalty
             delta += 10.0
         else:
@@ -222,11 +234,22 @@ def _chord_combo_adjustment(
             max_count = max(chord_shapes.values()) or 1
             delta -= 0.1 + 0.2 * (count / max_count)
 
+    template_key = _encode_shape_template(positions)
+    if chord_shape_templates:
+        template_count = chord_shape_templates.get(template_key)
+        if template_count:
+            max_template_count = max(chord_shape_templates.values()) or 1
+            delta -= 0.1 + 0.2 * (template_count / max_template_count)
+
     # --- Open string mixed into a high position (un-human cross-string) ---
     all_frets = [p.fret for p in positions]
     if any(f == 0 for f in all_frets) and max(all_frets) >= _OPEN_MIX_FRET_MIN:
         # Learned-common shapes are exempt; everything else is a suspect mix.
-        if not (chord_shapes and shape_key in chord_shapes):
+        learned_exact = chord_shapes and shape_key in chord_shapes
+        learned_template = (
+            chord_shape_templates and template_key in chord_shape_templates
+        )
+        if not (learned_exact or learned_template):
             delta += _OPEN_MIX_PENALTY
 
     return delta
@@ -239,6 +262,7 @@ def _score_chord_combo(
     prev_fingered: FingeredNote | None,
     individual_scores: list[float],
     chord_shapes: dict[str, int] | None = None,
+    chord_shape_templates: dict[str, int] | None = None,
 ) -> float:
     """Score a full chord-position combination (lower = better).
 
@@ -246,7 +270,9 @@ def _score_chord_combo(
     ``_chord_combo_adjustment``).
     """
     total = sum(individual_scores)
-    total += _chord_combo_adjustment(positions, priors, chord_shapes)
+    total += _chord_combo_adjustment(
+        positions, priors, chord_shapes, chord_shape_templates
+    )
     return total
 
 
@@ -289,6 +315,7 @@ def _group_options(
     tuning: GuitarTuning,
     max_fret: int,
     chord_shapes: dict[str, int] | None,
+    chord_shape_templates: dict[str, int] | None = None,
 ) -> list[_GroupOption]:
     """Generate legal fingering candidates for one onset group."""
 
@@ -310,14 +337,21 @@ def _group_options(
         if len({position.string for position in combo}) != len(combo):
             continue
         frets = [position.fret for position in combo if position.fret > 0]
-        if frets and max(frets) - min(frets) > _MAX_HAND_SPAN:
+        max_hand_span = int(priors.get("max_fret_span", _MAX_HAND_SPAN))
+        if frets and max(frets) - min(frets) > max_hand_span:
             continue
         individual = [
             _score_candidate(position, priors, None, note.duration_beats)
             for position, note in zip(combo, notes)
         ]
         local_cost = _score_chord_combo(
-            list(combo), priors, notes, None, individual, chord_shapes
+            list(combo),
+            priors,
+            notes,
+            None,
+            individual,
+            chord_shapes,
+            chord_shape_templates,
         )
         hand_position = max(1, min(frets)) if frets else 1
         anchor_string = sum(position.string for position in combo) / len(combo)
@@ -351,10 +385,15 @@ def _transition_cost(
     string_shift = abs(current.anchor_string - previous.anchor_string)
     fastest_duration = min(note.duration_beats for note in notes)
     speed_multiplier = 1.8 if fastest_duration < 0.5 else 1.0
-    return (
+    cost = (
         position_shift * 0.32 * stability
         + string_shift * 0.3 * string_penalty * speed_multiplier
     )
+    max_shift = priors.get("max_position_shift", 7.0)
+    allowed_shift = max(3.0, max_shift / speed_multiplier)
+    if position_shift > allowed_shift:
+        cost += (position_shift - allowed_shift) * 2.0
+    return cost
 
 
 def _optimize_phrase(
@@ -363,13 +402,16 @@ def _optimize_phrase(
     tuning: GuitarTuning,
     max_fret: int,
     chord_shapes: dict[str, int] | None,
+    chord_shape_templates: dict[str, int] | None = None,
 ) -> list[FingeredNote] | None:
     """Choose a globally coherent fingering path with bounded beam search."""
 
     if not groups:
         return []
     options_by_group = [
-        _group_options(group, priors, tuning, max_fret, chord_shapes)
+        _group_options(
+            group, priors, tuning, max_fret, chord_shapes, chord_shape_templates
+        )
         for group in groups
     ]
     if any(not options for options in options_by_group):
@@ -432,6 +474,7 @@ def _optimize_with_local_fallback(
     tuning: GuitarTuning,
     max_fret: int,
     chord_shapes: dict[str, int] | None,
+    chord_shape_templates: dict[str, int] | None = None,
 ) -> tuple[list[FingeredNote], int]:
     """Optimize legal phrase runs without poisoning them with one bad chord.
 
@@ -456,7 +499,9 @@ def _optimize_with_local_fallback(
         legal_options.clear()
 
     for group in groups:
-        options = _group_options(group, priors, tuning, max_fret, chord_shapes)
+        options = _group_options(
+            group, priors, tuning, max_fret, chord_shapes, chord_shape_templates
+        )
         if options:
             legal_groups.append(group)
             legal_options.append(options)
@@ -582,6 +627,9 @@ class FingeringStage:
         chord_shapes = self._engine.get_fingering_chord_shapes(
             ctx.style_label, ctx.track_role
         )
+        chord_shape_templates = self._engine.get_fingering_chord_shape_templates(
+            ctx.style_label, ctx.track_role
+        )
 
         # Hand-position continuity is tracked *per stream* so that a low riff
         # does not pull the lead melody's hand away from its phrase position.
@@ -595,7 +643,12 @@ class FingeringStage:
             )
             groups = _group_by_onset(stream_notes)
             optimized, impossible_groups = _optimize_with_local_fallback(
-                groups, priors, instrument_tuning, max_fret, chord_shapes
+                groups,
+                priors,
+                instrument_tuning,
+                max_fret,
+                chord_shapes,
+                chord_shape_templates,
             )
             ctx.fingered_notes.extend(optimized)
             if impossible_groups:

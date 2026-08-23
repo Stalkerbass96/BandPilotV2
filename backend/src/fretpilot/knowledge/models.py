@@ -27,6 +27,7 @@ class KnowledgeEvaluation:
     status: str  # candidate / evaluated / approved / deprecated
     confidence: float = 0.0
     tested_against: tuple[str, ...] = ()
+    metrics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,15 +82,21 @@ class KnowledgeEntry:
                 status=str(evaluation_raw.get("status", data.get("status", "approved"))),
                 confidence=float(evaluation_raw.get("confidence", 0.0)),
                 tested_against=tuple(evaluation_raw.get("tested_against", [])),
+                metrics=dict(evaluation_raw.get("metrics", {})),
             ),
         )
 
     def matches_scope(self, query: dict[str, str | list[str]]) -> bool:
-        """Return True if the entry's scope matches all keys in the query."""
-        for key, values in query.items():
-            entry_values = self.scope.get(key, ())
-            if not entry_values:
-                continue  # entry has no restriction on this key
+        """Return whether every restriction on the entry is satisfied.
+
+        A role-specific entry must not match a style-only query. The old
+        query-driven comparison accidentally let e.g. ``rock/lead`` become
+        the default for all rock parts.
+        """
+        for key, entry_values in self.scope.items():
+            values = query.get(key)
+            if values is None:
+                return False
             query_values = values if isinstance(values, list) else [values]
             if not any(v in entry_values for v in query_values):
                 return False
@@ -122,6 +129,7 @@ class KnowledgeEntry:
                 "status": self.evaluation.status,
                 "confidence": self.evaluation.confidence,
                 "tested_against": list(self.evaluation.tested_against),
+                "metrics": dict(self.evaluation.metrics),
             },
         }
 

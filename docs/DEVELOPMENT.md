@@ -83,6 +83,15 @@ learning ingest -> candidate snapshot -> A/B evaluation -> promotion
 - Learning inputs require rights, review, and split metadata. New snapshots are
   candidates until independent A/B evidence passes deterministic no-regression
   gates; rollback may restore promoted snapshots only.
+- Every knowledge provenance value is a stable ID declared in
+  `knowledge/assets/source_catalog.json`; file paths, song names and ad-hoc
+  bibliography strings are forbidden. Empirical/derived knowledge requires a
+  verified source with `derive_aggregates` permission.
+- Corpus statistics are calculated within each score/excerpt and only then
+  aggregated. Chords, transitions, overlaps and phrase paths may never cross a
+  file, track or train/validation/test boundary.
+- Knowledge resolution layers generic defaults before style and role overrides.
+  A role-scoped entry must never satisfy a query that omitted the role.
 - Database schema changes are Alembic revisions. `create_all()` is allowed only
   in isolated tests, never as the application migration mechanism.
 
@@ -121,6 +130,8 @@ Project repair status has one meaning across API, database, UI, and manifest:
 Musical-intelligence changes must add at least one machine-checkable
 playability invariant (pitch/string/fret, span, technique relation, rhythm, or
 export round trip) and a comparison against the current knowledge snapshot.
+Changes to empirical formulas also rebuild the asset from its pinned source,
+report held-out split drift, and keep the frozen test split out of tuning.
 
 ## 5. Required local gates
 
@@ -140,6 +151,18 @@ npm run build
 External GP corpus tests are opt-in and use
 `FRETPILOR_TEST_REFERENCE_ZIP=/absolute/path/to/archive.zip`. CI and the normal
 unit suite never depend on that archive.
+
+The public GuitarSet KB2 seed is reproducible from the verified 360-file JAMS
+annotation directory (the artifact hash is pinned in `source_catalog.json`):
+
+```bash
+cd backend
+uv run python -m fretpilot.elearning.guitarset /path/to/annotations \
+  --output src/fretpilot/knowledge/assets/kb2_performance.json
+```
+
+Never point this builder at a private or rights-unknown corpus. Such corpora use
+the candidate/evaluation workflow and require catalogue registration first.
 
 GP5 changes also require the committed compatibility fixture to pass the
 frontend AlphaTab importer. A release candidate that changes GP5 structure is

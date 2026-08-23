@@ -1,0 +1,210 @@
+{
+  "schema_version": "1",
+  "catalog_version": "2026.08.23",
+  "sources": [
+    {
+      "source_id": "guitarset-zenodo-3371780",
+      "title": "GuitarSet: A Dataset for Guitar Transcription",
+      "source_type": "public_dataset",
+      "url": "https://zenodo.org/records/3371780",
+      "license_id": "CC-BY-4.0",
+      "rights_verified": true,
+      "permitted_uses": ["train", "validate", "test", "derive_aggregates", "redistribute_aggregates"],
+      "redistribution": "attribution_required",
+      "accessed_at": "2026-08-23",
+      "artifact_hash": "md5:b39b78e63d3446f2e54ddb7a54df9b10",
+      "attribution": "Qingyang Xi, Rachel Bittner, Johan Pauwels, Xuzhou Ye, and Juan Pablo Bello",
+      "notes": "The active guitar priors use performers 00-03 for derivation, 04 for validation, and 05 for a frozen test split."
+    },
+    {
+      "source_id": "user-gtp-corpus-075d0053",
+      "title": "User-supplied professional GTP reference corpus",
+      "source_type": "private_corpus",
+      "url": "",
+      "license_id": "user-supplied-unverified",
+      "rights_verified": false,
+      "permitted_uses": ["private_evaluation", "coverage_inventory"],
+      "redistribution": "none",
+      "accessed_at": "2026-08-23",
+      "artifact_hash": "sha256:075d005341a0e8d32fdf81c5a732756e02460a4c83f539d326323ce606725c42",
+      "notes": "Raw files, song titles, and local paths are excluded from repository assets. Explicit rights metadata is required before knowledge promotion."
+    },
+    {
+      "source_id": "musicxml-4.0",
+      "title": "W3C MusicXML 4.0",
+      "source_type": "official_specification",
+      "url": "https://www.w3.org/2021/06/musicxml40/",
+      "license_id": "W3C-document-license",
+      "rights_verified": true,
+      "permitted_uses": ["reference", "implement_interoperability"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "midi-spec",
+      "title": "MIDI Association Specifications",
+      "source_type": "official_specification",
+      "url": "https://midi.org/specs",
+      "license_id": "proprietary-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference", "implement_interoperability"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "guitar-pro-5-spec",
+      "title": "PyGuitarPro format implementation and Guitar Pro documentation",
+      "source_type": "implementation_reference",
+      "url": "https://github.com/Perlence/PyGuitarPro",
+      "license_id": "LGPL-3.0",
+      "rights_verified": true,
+      "permitted_uses": ["reference", "implement_interoperability"],
+      "redistribution": "license_terms_apply",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "Main Panel Manual-AME.pdf",
+      "title": "Ample Metal Eclipse official manual",
+      "source_type": "official_manual",
+      "url": "https://amplesound.net/en/Main_Panel_Manual-AME.pdf",
+      "license_id": "proprietary-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference", "implement_keymap"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "Main_Panel_Manual-AGSC.pdf",
+      "title": "Ample Guitar SC official manual",
+      "source_type": "official_manual",
+      "url": "https://amplesound.net/en/manual.asp",
+      "license_id": "proprietary-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference", "implement_keymap"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "pas-40-rudiments",
+      "title": "Percussive Arts Society International Drum Rudiments",
+      "source_type": "professional_standard",
+      "url": "https://pas.org/rudiments/",
+      "license_id": "all-rights-reserved-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "path-difference-learning-2004",
+      "title": "Automatic Guitar Fingering Using Path Difference Learning",
+      "source_type": "research_paper",
+      "url": "https://www.mistic.ece.uvic.ca/publications/2004_icmc_pdl.pdf",
+      "license_id": "research-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "rich-guitar-tablature-2024",
+      "title": "Automatic Generation of Rich Guitar Tablatures",
+      "source_type": "research_paper",
+      "url": "https://arxiv.org/abs/2407.09052",
+      "license_id": "arXiv-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "guitar-bend-prediction-2023",
+      "title": "Prediction of Guitar Bends from Musical Context",
+      "source_type": "research_paper",
+      "url": "https://arxiv.org/abs/2308.12307",
+      "license_id": "arXiv-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "guitar-biomechanics-2002",
+      "title": "On the complexity of classical guitar playing: functional adaptations to task constraints",
+      "source_type": "research_paper",
+      "url": "https://pubmed.ncbi.nlm.nih.gov/12446249/",
+      "license_id": "research-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "piano-fingering-2020",
+      "title": "Statistical Learning and Estimation of Piano Fingering",
+      "source_type": "research_paper",
+      "url": "https://arxiv.org/abs/1904.10237",
+      "license_id": "arXiv-reference",
+      "rights_verified": true,
+      "permitted_uses": ["reference"],
+      "redistribution": "link_only",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "dadagp-dataset",
+      "title": "DadaGP dataset",
+      "source_type": "restricted_dataset",
+      "url": "https://github.com/dada-bots/dadaGP",
+      "license_id": "dataset-access-by-request",
+      "rights_verified": false,
+      "permitted_uses": ["reference"],
+      "redistribution": "none",
+      "accessed_at": "2026-08-23",
+      "notes": "Not used for active knowledge. The repository code licence does not grant rights to the underlying tablatures."
+    },
+    {
+      "source_id": "bandpilot-internal-policy-v1",
+      "title": "BandPilot conservative performance and notation policy",
+      "source_type": "internal_policy",
+      "url": "",
+      "license_id": "project-internal",
+      "rights_verified": true,
+      "permitted_uses": ["author_rules", "validate"],
+      "redistribution": "with_project",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "bandpilot-professional-keys-policy-v1",
+      "title": "BandPilot professional keyboard policy",
+      "source_type": "internal_policy",
+      "url": "",
+      "license_id": "project-internal",
+      "rights_verified": true,
+      "permitted_uses": ["author_rules"],
+      "redistribution": "with_project",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "bandpilot-professional-bass-policy-v1",
+      "title": "BandPilot professional bass policy",
+      "source_type": "internal_policy",
+      "url": "",
+      "license_id": "project-internal",
+      "rights_verified": true,
+      "permitted_uses": ["author_rules"],
+      "redistribution": "with_project",
+      "accessed_at": "2026-08-23"
+    },
+    {
+      "source_id": "bandpilot-humanization-eval-v1",
+      "title": "BandPilot humanization evaluation policy",
+      "source_type": "internal_policy",
+      "url": "",
+      "license_id": "project-internal",
+      "rights_verified": true,
+      "permitted_uses": ["author_rules", "validate"],
+      "redistribution": "with_project",
+      "accessed_at": "2026-08-23"
+    }
+  ]
+}

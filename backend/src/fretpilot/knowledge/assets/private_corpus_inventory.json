@@ -1,0 +1,40 @@
+{
+  "schema_version": "1",
+  "inventory_version": "2026.08.23",
+  "source_id": "user-gtp-corpus-075d0053",
+  "status": "evaluation_only",
+  "privacy": {
+    "raw_scores_committed": false,
+    "titles_committed": false,
+    "local_paths_committed": false
+  },
+  "archive": {
+    "sha256": "075d005341a0e8d32fdf81c5a732756e02460a4c83f539d326323ce606725c42",
+    "file_entries": 2096,
+    "unique_music_files": 2030,
+    "supported_unique_files": 1587
+  },
+  "parse": {
+    "successful_files": 1585,
+    "failed_files": 445,
+    "tracks": 6421,
+    "notes": 4670420
+  },
+  "technique_occurrences": {
+    "let_ring": 191575,
+    "palm_mute": 58157,
+    "slide": 30284,
+    "legato": 29412,
+    "ghost_note": 26856,
+    "vibrato": 15117,
+    "bend": 11140,
+    "harmonic": 10636,
+    "staccato": 10313,
+    "accent": 5263,
+    "grace": 5258,
+    "tremolo_picking": 2097,
+    "heavy_accent": 1527,
+    "trill": 242
+  },
+  "promotion_gate": "Explicit rights metadata and leakage-safe train/validation/test splits are required before aggregate knowledge may be promoted."
+}

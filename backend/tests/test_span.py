@@ -122,7 +122,14 @@ class TestIsPowerChord:
 
 
 class TestScoreChordCombo:
-    def _score(self, positions, priors=None, individual=None, chord_shapes=None) -> float:
+    def _score(
+        self,
+        positions,
+        priors=None,
+        individual=None,
+        chord_shapes=None,
+        chord_shape_templates=None,
+    ) -> float:
         return _score_chord_combo(
             positions,
             priors or {},
@@ -130,6 +137,7 @@ class TestScoreChordCombo:
             prev_fingered=None,
             individual_scores=individual if individual is not None else [0.0] * len(positions),
             chord_shapes=chord_shapes,
+            chord_shape_templates=chord_shape_templates,
         )
 
     def test_adjacent_strings_rewarded(self) -> None:
@@ -203,6 +211,17 @@ class TestScoreChordCombo:
         )
         # Reward delta: (0.1 + 0.2·1.0) − (0.1 + 0.2·0.1) = 0.18
         assert low - high == pytest.approx(0.18)
+
+    def test_transposed_learned_template_gets_bonus(self) -> None:
+        positions = [_pos(5, 5), _pos(6, 3)]
+
+        without_template = self._score(positions)
+        with_template = self._score(
+            positions,
+            chord_shape_templates={"s5+2,s6+0": 100},
+        )
+
+        assert with_template < without_template
 
     def test_unmatched_open_high_mix_still_penalized(self) -> None:
         """A cross-string open+high mix whose shape was *not* learned stays

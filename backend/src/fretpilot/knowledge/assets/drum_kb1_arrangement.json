@@ -1,5 +1,5 @@
 {
-  "snapshot_version": "2026.08.18-123416",
+  "snapshot_version": "2026.08.23-guitarset-v1",
   "schema_version": "1",
   "status": "approved",
   "entries": [
@@ -8,7 +8,7 @@
       "domain": "drum_kb1_arrangement",
       "kind": "drum_arrangement_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "beat_density": 3.5,
@@ -26,7 +26,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-drum-arrangement"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     },
@@ -35,7 +36,7 @@
       "domain": "drum_kb1_arrangement",
       "kind": "drum_arrangement_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "beat_density": 2.0,
@@ -53,7 +54,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-drum-arrangement"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     },
@@ -62,7 +64,7 @@
       "domain": "drum_kb1_arrangement",
       "kind": "drum_arrangement_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "beat_density": 1.5,
@@ -80,7 +82,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-drum-arrangement"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     },
@@ -89,7 +92,7 @@
       "domain": "drum_kb1_arrangement",
       "kind": "drum_arrangement_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "beat_density": 3.0,
@@ -107,7 +110,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-drum-arrangement"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     },
@@ -116,7 +120,7 @@
       "domain": "drum_kb1_arrangement",
       "kind": "drum_arrangement_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "beat_density": 2.5,
@@ -134,7 +138,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-drum-arrangement"
+          "bandpilot-internal-policy-v1",
+          "pas-40-rudiments"
         ]
       }
     }

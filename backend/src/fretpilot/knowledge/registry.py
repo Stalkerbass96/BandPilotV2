@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from fretpilot.knowledge.models import KnowledgeEntry, KnowledgeSnapshot
+from fretpilot.knowledge.sources import KnowledgeSourceCatalog
 
 logger = logging.getLogger("fretpilot.knowledge.registry")
 
@@ -68,6 +69,14 @@ def _build_snapshot_from_assets(
     entries: list[KnowledgeEntry] = []
     snapshot_version = "unknown"
     sources: list[str] = []
+    catalog_path = assets_dir / "source_catalog.json"
+    catalog = (
+        KnowledgeSourceCatalog.from_file(catalog_path)
+        if catalog_path.exists()
+        else None
+    )
+    if catalog is not None:
+        sources.append(catalog_path.name)
 
     for domain in _KB_DOMAINS:
         path = assets_dir / f"{domain}.json"
@@ -84,7 +93,14 @@ def _build_snapshot_from_assets(
                 f"expected {snapshot_version}"
             )
         for raw_entry in data.get("entries", []):
-            entries.append(KnowledgeEntry.from_dict(raw_entry))
+            entry = KnowledgeEntry.from_dict(raw_entry)
+            if catalog is not None:
+                catalog.validate_entry_sources(
+                    knowledge_id=entry.knowledge_id,
+                    source_type=entry.provenance.source_type,
+                    source_ids=entry.provenance.source_ids,
+                )
+            entries.append(entry)
         sources.append(path.name)
 
     return KnowledgeSnapshot(
@@ -150,10 +166,13 @@ class KnowledgeRegistry:
         domain: str | None = None,
         scope: dict[str, str | list[str]] | None = None,
         kind: str | None = None,
+        include_inactive: bool = False,
     ) -> list[KnowledgeEntry]:
-        """Query entries by domain, scope, and/or kind."""
+        """Query entries by domain, scope, kind, and activation status."""
         results: list[KnowledgeEntry] = []
         for entry in self._snapshot.entries:
+            if not include_inactive and entry.status != REQUIRED_STATUS:
+                continue
             if domain and entry.domain != domain:
                 continue
             if kind and entry.kind != kind:
@@ -169,11 +188,14 @@ class KnowledgeRegistry:
         domain: str,
         scope: dict[str, str | list[str]] | None = None,
     ) -> dict[str, Any]:
-        """Return the merged payload of the first matching entry (empty if none)."""
+        """Merge matching payloads from generic to most-specific."""
         entries = self.query(domain=domain, scope=scope)
         if not entries:
             return {}
-        return dict(entries[0].payload)
+        merged: dict[str, Any] = {}
+        for entry in sorted(entries, key=lambda item: len(item.scope)):
+            merged.update(entry.payload)
+        return merged
 
     def entry_ids(self) -> list[str]:
         """Return all entry IDs in the snapshot."""

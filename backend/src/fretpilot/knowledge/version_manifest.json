@@ -1,52 +1,55 @@
 {
- "versions": [
-  {
-   "version": "2026.08.17-174035",
-   "timestamp": "2026-08-17T17:40:35.309441+00:00",
-   "source_type": "empirical",
-   "styles_updated": [
-    "rock"
-   ],
-   "knowledge_ids_updated": [
-    "kb2-rock-lead-performance"
-   ],
-   "total_sources": 3,
-   "avg_confidence": 0.4725,
-   "method": "statistical_mapping"
-  },
-  {
-   "version": "2026.08.18-110010",
-   "timestamp": "2026-08-18T11:00:11.006729+00:00",
-   "source_type": "empirical",
-   "styles_updated": [
-    "rock",
-    "pop",
-    "funk"
-   ],
-   "knowledge_ids_updated": [
-    "kb2-rock-lead-performance",
-    "kb2-pop-performance",
-    "kb2-funk-performance"
-   ],
-   "total_sources": 809,
-   "avg_confidence": 0.9700000000000001,
-   "method": "statistical_mapping"
-  },
-  {
-   "version": "2026.08.18-123416",
-   "timestamp": "2026-08-18T12:34:16.512410+00:00",
-   "source_type": "textbook",
-   "styles_updated": [
-    "metal"
-   ],
-   "knowledge_ids_updated": [
-    "kb2-metal-performance"
-   ],
-   "total_sources": 1,
-   "avg_confidence": 0.9,
-   "method": "textbook_ingestion"
-  }
- ],
- "active_version": "2026.08.18-123416",
- "last_updated": "2026-08-18T12:34:16.512410+00:00"
+  "versions": [
+    {
+      "version": "2026.08.23-guitarset-v1",
+      "timestamp": "2026-08-23T00:00:00+00:00",
+      "source_type": "public_dataset_and_governed_policy",
+      "styles_updated": [
+        "acoustic",
+        "bossa_nova",
+        "funk",
+        "jazz",
+        "metal",
+        "pop",
+        "rock",
+        "singer_songwriter"
+      ],
+      "knowledge_ids_updated": [
+        "kb2-guitar-safe-defaults-v1",
+        "kb2-metal-safe-policy-v1",
+        "kb2-guitarset-bossa_nova-lead-v1",
+        "kb2-guitarset-bossa_nova-rhythm-v1",
+        "kb2-guitarset-funk-lead-v1",
+        "kb2-guitarset-funk-rhythm-v1",
+        "kb2-guitarset-jazz-lead-v1",
+        "kb2-guitarset-jazz-rhythm-v1",
+        "kb2-guitarset-rock-lead-v1",
+        "kb2-guitarset-rock-rhythm-v1",
+        "kb2-guitarset-singer_songwriter-lead-v1",
+        "kb2-guitarset-singer_songwriter-rhythm-v1"
+      ],
+      "total_sources": 2,
+      "avg_confidence": 0.846167,
+      "method": "guitarset-priors-v1",
+      "evaluation": {
+        "approved_empirical_profiles": 5,
+        "inactive_candidate_profiles": 5,
+        "validation_exact_fingering": {
+          "baseline": 0.566956,
+          "gated_snapshot": 0.58061,
+          "delta": 0.013655,
+          "notes": 10253
+        },
+        "test_exact_fingering": {
+          "baseline": 0.510958,
+          "gated_snapshot": 0.521285,
+          "delta": 0.010327,
+          "notes": 8715
+        }
+      },
+      "status": "promoted"
+    }
+  ],
+  "active_version": "2026.08.23-guitarset-v1",
+  "last_updated": "2026-08-23T00:00:00+00:00"
 }

@@ -118,6 +118,15 @@ Acceptance:
 Objective: improve the primary GP score's physical realization without
 regressing pitch or rhythm.
 
+Current foundation: rights-clear GuitarSet aggregates now provide ten evaluated
+style-role candidates, performer-disjoint held-out evidence, exact chord shapes
+and movable chord templates. Five profiles pass the non-regression gate and are
+active; the other five fall back to the safe generic policy. On the direct
+held-out fingering-stage A/B, the gated snapshot improves exact string/fret
+agreement from 56.70% to 58.06% on validation and from 51.10% to 52.13% on the
+frozen test performers. This is a calibrated starting point, not completion of
+the fixed-validation targets below.
+
 Deliverables:
 
 - Per-guitar-track Top-K tuning/capo inference with calibrated confidence,

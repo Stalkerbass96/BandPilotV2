@@ -149,6 +149,33 @@ class KnowledgeEngine:
                     merged[str(key)] = merged.get(str(key), 0) + int(count)
         return merged
 
+    def get_fingering_chord_shape_templates(
+        self, style_label: str, role: str = ""
+    ) -> dict[str, int]:
+        """Return transposition-invariant string/fret-offset templates."""
+
+        payload = self._query_kb2_payload(style_label, role)
+        templates = payload.get("chord_shape_templates")
+        if isinstance(templates, dict) and templates:
+            return {str(key): int(value) for key, value in templates.items()}
+
+        merged: dict[str, int] = {}
+        for entry in self.registry.query(domain="kb2_performance"):
+            values = entry.payload.get("chord_shape_templates")
+            if isinstance(values, dict):
+                for key, count in values.items():
+                    merged[str(key)] = merged.get(str(key), 0) + int(count)
+        return merged
+
+    def get_articulation_policy(
+        self, style_label: str, role: str = ""
+    ) -> dict[str, Any]:
+        """Return the layered evidence policy for technique inference."""
+
+        payload = self._query_kb2_payload(style_label, role)
+        policy = payload.get("articulation_policy")
+        return dict(policy) if isinstance(policy, dict) else {}
+
     def get_notation_convention(
         self, format_id: str
     ) -> dict[str, Any]:

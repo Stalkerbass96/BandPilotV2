@@ -1,5 +1,5 @@
 {
-  "snapshot_version": "2026.08.18-123416",
+  "snapshot_version": "2026.08.23-guitarset-v1",
   "schema_version": "1",
   "status": "approved",
   "entries": [
@@ -8,7 +8,7 @@
       "domain": "drum_kb3_notation",
       "kind": "notation_conventions",
       "schema_version": "1",
-      "knowledge_version": "2026.08.19-230000",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "gm_drum_map_enabled": true,
@@ -26,7 +26,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "stickpilot-notation"
+          "bandpilot-internal-policy-v1",
+          "guitar-pro-5-spec"
         ]
       }
     }

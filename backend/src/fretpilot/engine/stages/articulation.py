@@ -58,6 +58,7 @@ def _infer_style_articulations(
 def _infer_legato_articulation(
     note: FingeredNote,
     all_notes: list[FingeredNote],
+    policy: dict[str, object] | None = None,
 ) -> ArticulationDecision | None:
     """Infer hammer_on/pull_off for legato candidates on the same string."""
     if not note.legato_candidate or note.string is None:
@@ -77,6 +78,14 @@ def _infer_legato_articulation(
             break
 
     if prev is None or prev.fret is None or note.fret is None:
+        return None
+
+    active_policy = policy or {}
+    interval = abs(note.pitch - prev.pitch)
+    max_interval = int(active_policy.get("legato_max_interval_semitones", 5))
+    gap = note.start_beat - (prev.start_beat + prev.duration_beats)
+    max_gap = float(active_policy.get("legato_max_gap_beats", 0.25))
+    if interval == 0 or interval > max_interval or gap > max_gap:
         return None
 
     if note.fret > prev.fret:
@@ -105,6 +114,9 @@ class ArticulationStage:
 
     def run(self, ctx: PipelineContext) -> PipelineContext:
         priors = self._engine.get_fingering_priors(ctx.style_label, ctx.track_role)
+        policy = self._engine.get_articulation_policy(
+            ctx.style_label, ctx.track_role
+        )
         sorted_notes = sorted(ctx.fingered_notes, key=lambda n: n.start_beat)
 
         # Legato (hammer_on / pull_off) is stream-scoped: the preceding note on
@@ -118,7 +130,9 @@ class ArticulationStage:
 
         for note in sorted_notes:
             decisions = _infer_style_articulations(note, priors, ctx.style_label)
-            legato = _infer_legato_articulation(note, by_stream[note.stream])
+            legato = _infer_legato_articulation(
+                note, by_stream[note.stream], policy
+            )
             if legato is not None:
                 decisions.append(legato)
             ctx.articulation_decisions.extend(decisions)

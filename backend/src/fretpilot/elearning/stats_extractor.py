@@ -60,6 +60,25 @@ class StatsExtractor:
                 logger.warning("Style %r has no notes; skipping", style)
                 continue
 
+            chord_shapes: Counter[str] = Counter()
+            skip_total = overlap_total = 0.0
+            transition_count = 0
+            for tab in style_tabs:
+                chord_shapes.update(
+                    self._compute_chord_shapes(tab.notes, top_k=max(1, len(tab.notes)))
+                )
+                if len(tab.notes) >= 2:
+                    pairs = len(tab.notes) - 1
+                    skip_total += self._compute_avg_string_skip(tab.notes) * pairs
+                    beats_per_measure = tab.time_signature[0] * 4 / tab.time_signature[1]
+                    overlap_total += (
+                        self._compute_note_overlap_rate(
+                            tab.notes, beats_per_measure=beats_per_measure
+                        )
+                        * pairs
+                    )
+                    transition_count += pairs
+
             stats = StyleStats(
                 style_label=style,
                 sample_count=len(style_tabs),
@@ -67,9 +86,15 @@ class StatsExtractor:
                 open_string_rate=self._compute_open_string_rate(all_notes),
                 hand_position_distribution=self._compute_hand_position_dist(all_notes),
                 string_distribution=self._compute_string_distribution(all_notes),
-                avg_string_skip=self._compute_avg_string_skip(all_notes),
-                chord_shape_top_k=self._compute_chord_shapes(all_notes),
-                note_overlap_rate=self._compute_note_overlap_rate(all_notes),
+                avg_string_skip=(
+                    round(skip_total / transition_count, 6)
+                    if transition_count else 0.0
+                ),
+                chord_shape_top_k=dict(chord_shapes.most_common(_DEFAULT_TOP_K)),
+                note_overlap_rate=(
+                    round(overlap_total / transition_count, 6)
+                    if transition_count else 0.0
+                ),
                 staccato_rate=self._compute_staccato_rate(all_notes),
                 fret_distribution=self._compute_fret_distribution(all_notes),
                 technique_rates=self._compute_technique_rates(style_tabs, len(all_notes)),
@@ -169,7 +194,9 @@ class StatsExtractor:
         return round(sum(skips) / len(skips), 6)
 
     @staticmethod
-    def _compute_note_overlap_rate(notes: list[GroundTruthNote]) -> float:
+    def _compute_note_overlap_rate(
+        notes: list[GroundTruthNote], beats_per_measure: float = 4.0
+    ) -> float:
         """Fraction of adjacent note pairs with overlapping durations.
 
         Two notes overlap if the second starts before the first ends
@@ -183,15 +210,20 @@ class StatsExtractor:
             key=lambda n: (n.measure_number, n.beat_in_measure),
         )
 
-        # We need beats_per_measure; use 4.0 as default (sufficient for P1).
-        bpm = 4.0
         overlaps = 0
         total_pairs = 0
         for i in range(1, len(sorted_notes)):
             prev = sorted_notes[i - 1]
             curr = sorted_notes[i]
-            prev_end = (prev.measure_number - 1) * bpm + prev.beat_in_measure + prev.duration_beats
-            curr_start = (curr.measure_number - 1) * bpm + curr.beat_in_measure
+            prev_end = (
+                (prev.measure_number - 1) * beats_per_measure
+                + prev.beat_in_measure
+                + prev.duration_beats
+            )
+            curr_start = (
+                (curr.measure_number - 1) * beats_per_measure
+                + curr.beat_in_measure
+            )
             if curr_start < prev_end:
                 overlaps += 1
             total_pairs += 1

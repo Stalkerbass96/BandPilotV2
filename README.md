@@ -17,7 +17,7 @@ and notation a musician can rehearse without repairing the file by hand.
 | Humanized band MIDI | Implemented |
 | Ample Guitar Eclipse MIDI, source-preserved and humanized | Implemented |
 | BYOK LLM style/rewrite advice with deterministic validation and fallback | Implemented |
-| Governed GP corpus evaluation and candidate knowledge snapshots | Implemented baseline |
+| Rights-aware source catalogue, GuitarSet seed priors, governed GP evaluation and candidate snapshots | Implemented baseline |
 | Production queue workers, cancellation and automatic corpus promotion | Not implemented |
 | Native GP keyboard grand staff and sound profiles beyond Eclipse | Not implemented |
 
@@ -89,7 +89,7 @@ npm run build
 External GP corpus evaluation is opt-in and never part of the default unit
 suite. Set `FRETPILOR_TEST_REFERENCE_ZIP` only for a local, authorized corpus.
 
-The latest verified snapshot is 551 backend tests passed, 6 opt-in tests
+The latest verified snapshot is 568 backend tests passed, 6 opt-in tests
 skipped, 8 frontend tests passed, and a successful frontend production build.
 Do not treat this number as a permanent contract; CI status and the current
 test suite are authoritative.

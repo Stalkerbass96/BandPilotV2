@@ -1,5 +1,5 @@
 {
-  "snapshot_version": "2026.08.18-123416",
+  "snapshot_version": "2026.08.23-guitarset-v1",
   "schema_version": "1",
   "status": "approved",
   "entries": [
@@ -8,7 +8,7 @@
       "domain": "kb3_notation",
       "kind": "notation_convention",
       "schema_version": "1",
-      "knowledge_version": "2026.08.2",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "max_voices": 2,
@@ -35,7 +35,7 @@
       "domain": "kb3_notation",
       "kind": "notation_convention",
       "schema_version": "1",
-      "knowledge_version": "2026.08.2",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "preserve_source_velocity": true,

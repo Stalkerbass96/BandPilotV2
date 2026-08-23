@@ -1,5 +1,5 @@
 {
-  "snapshot_version": "2026.08.18-110010",
+  "snapshot_version": "2026.08.23-guitarset-v1",
   "schema_version": "1",
   "status": "approved",
   "entries": [
@@ -8,7 +8,7 @@
       "domain": "kb1_arrangement",
       "kind": "style_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.2",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "note_density_range": [
@@ -27,7 +27,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "fender-picking-styles"
+          "bandpilot-internal-policy-v1",
+          "guitarset-zenodo-3371780"
         ]
       }
     },
@@ -36,7 +37,7 @@
       "domain": "kb1_arrangement",
       "kind": "style_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.2",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "note_density_range": [
@@ -55,7 +56,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "rock-guitar-encyclopedia"
+          "bandpilot-internal-policy-v1",
+          "guitarset-zenodo-3371780"
         ]
       }
     },
@@ -64,7 +66,7 @@
       "domain": "kb1_arrangement",
       "kind": "style_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.2",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "note_density_range": [
@@ -83,7 +85,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "pop-production-guide"
+          "bandpilot-internal-policy-v1",
+          "guitarset-zenodo-3371780"
         ]
       }
     },
@@ -92,7 +95,7 @@
       "domain": "kb1_arrangement",
       "kind": "style_priors",
       "schema_version": "1",
-      "knowledge_version": "2026.08.2",
+      "knowledge_version": "2026.08.23-guitarset-v1",
       "status": "approved",
       "payload": {
         "note_density_range": [
@@ -112,7 +115,8 @@
       "provenance": {
         "source_type": "hand_authored",
         "source_ids": [
-          "funk-guitar-method"
+          "bandpilot-internal-policy-v1",
+          "guitarset-zenodo-3371780"
         ]
       }
     }

@@ -32,6 +32,14 @@ Authorized GP corpus
   -> candidate knowledge snapshot
   -> independent A/B gate
   -> explicit promotion or rollback
+
+Rights-clear public annotations (GuitarSet)
+  -> performer-disjoint train / validation / test split
+  -> per-file string, fret, transition and chord aggregation
+  -> absolute shapes + transposition-invariant templates
+  -> safe-default versus candidate fingering A/B on held-out performers
+  -> source-catalog validation
+  -> only non-regressing priors become active
 ```
 
 The dependency direction is one-way. Routes do not implement musical stages;
@@ -186,6 +194,31 @@ Learning writes an immutable candidate snapshot. Promotion requires an
 independent corpus, minimum evidence and deterministic no-regression gates.
 Rollback can restore a promoted snapshot but cannot activate an unevaluated
 candidate.
+
+`knowledge/assets/source_catalog.json` is the provenance authority. Runtime
+entries store stable IDs only; the registry rejects unknown IDs and local
+paths. Empirical or derived entries additionally require a rights-verified
+source that permits aggregate derivation. URLs, licence terms, attribution and
+artifact hashes remain in the catalogue rather than being copied into every
+entry.
+
+The first public guitar baseline is GuitarSet under CC BY 4.0. Its split is
+frozen by performer: `00`–`03` train, `04` validation and `05` test. Statistics
+and transitions are accumulated per excerpt before aggregation, so identical
+measure/beat coordinates in different songs can never form false chords or
+cross-song position changes. Only aggregate priors and top chord patterns are
+packaged.
+
+Every style-role profile is compared with the generic safe fallback through
+the real fingering stage. A profile is active only when exact string/fret
+agreement is non-regressing on both validation and frozen test performers.
+Failed profiles remain inspectable candidates in the snapshot but normal
+runtime queries exclude them.
+
+The user-supplied GTP archive remains a private evaluation corpus. The package
+contains only a hash-keyed, title-free coverage inventory. It cannot contribute
+active priors until explicit rights, review tier and leakage-safe split metadata
+pass the existing promotion gate.
 
 ## 10. Security boundary
 
