@@ -1,139 +1,340 @@
 # BandPilot development rules
 
-This document is the mandatory working agreement for BandPilot changes. The
-goal is predictable delivery: one source of truth per workflow, explicit
-contracts, small reviewable changes, and no silent failure paths.
+This is the mandatory working agreement for BandPilot. The upgrade must produce
+one coherent professional editor, not a new UI layered over duplicate musical
+state or unreviewable feature batches.
 
 ## 0. Documentation authority
 
-- `PRODUCT.md` owns product behavior and success metrics.
-- `ARCHITECTURE.md` owns system boundaries and contracts.
-- This file owns development workflow and definition of done.
+- `PRODUCT.md` owns product behavior, scope and experience.
+- `ARCHITECTURE.md` owns system boundaries, canonical contracts and migration.
 - `ROADMAP.md` owns priority, status and milestone gates.
-- Documents under `archive/` are historical and must not be used as current
-  acceptance criteria.
-- Update an existing owner document. Do not create versioned PRDs or new phase
-  completion files.
+- This file owns implementation workflow and definition of done.
+- `README.md` owns setup and public capability summaries.
+- `archive/` is historical evidence, not active acceptance criteria.
 
-## 1. Architecture boundaries
+Update the existing owner document. Do not create `PRD-v2`, new phase reports
+or personal planning files that compete with these sources.
 
-The permitted dependency direction is:
+## 1. Non-negotiable engineering rules
+
+- One canonical editable score document. Renderer models, GP/MusicXML files,
+  SongIR compatibility objects, client caches and LLM responses are derived.
+- One write boundary. Manual, repair, humanize, migration and AI changes commit
+  through the typed score command service.
+- One accepted user action is one understandable undo transaction.
+- Stable entity IDs and exact rational score time are used across persistence,
+  selection, comments, collaboration and proposals.
+- Every automated change is pinned, diffable, validated, attributable and
+  reversible.
+- Exporters are read-only consumers of a validated pinned revision.
+- No accepted command, job or export reports success before durable state and
+  required validation exist.
+- Existing source MIDI and historical artifacts are never overwritten by an
+  editor migration.
+
+## 2. Dependency and ownership boundaries
+
+Target dependency direction:
 
 ```text
-API routes -> application services -> orchestrator -> instrument pipelines
-                                      -> working IR adapters -> SongIR
-instrument pipelines -> knowledge / MIDI / working IR
-SongIR -> validation -> exporters
+React editor -> typed API/WebSocket client
+API -> application services -> score command service -> ScoreDocument validator
+proposal services -> engine/AI/knowledge -> candidate operations -> command service
+ScoreDocument revision -> exporters / renderer projection / playback projection
+collaboration gateway -> permissions + accepted-command stream
 learning ingest -> candidate snapshot -> A/B evaluation -> promotion
 ```
 
-- API routes authenticate, validate transport data, open transactions, and map
-  service results to responses. They do not implement repair stages.
-- `RepairService` is the only application entry point for a project repair.
-- `BandPilotOrchestrator` classifies and routes every physical source track.
-- Instrument pipelines own instrument-specific transformations. A new
-  instrument family requires a plugin, working IR, adapter, validator, fixture,
-  and exporter behavior; it must never be disguised as guitar.
-- SongIR is the canonical persisted score contract. Focused guitar/drum IRs
-  may exist inside pipelines and compatibility adapters, but no new feature
-  may create a second editable score source of truth.
-- IR is a versioned contract. Schema changes require a migration strategy,
-  serializer tests, exporter tests, and an explicit schema-version decision.
-- Exporters are read-only consumers. They must not repair, transpose, drop,
-  deduplicate, or invent realization data. Impossible source notes belong in
-  SongIR's unresolved layer.
-- A writer's own parse-back is necessary but not sufficient. GP5 behavior that
-  affects product compatibility requires PyGuitarPro structural checks,
-  AlphaTab import coverage and a Guitar Pro release smoke test where relevant.
-- Packaged knowledge is an immutable seed. Runtime learning writes only to the
-  configured knowledge store.
-- Every repair has a durable repair-job row and reproducibility manifest.
-  Project status is the latest-result projection, not execution history.
-- Browser-facing repair uses start-and-poll semantics. LLM or corpus work must
-  never depend on one long-lived HTTP connection: start returns `202` with a
-  job ID, terminal jobs persist their typed result or explicit error, and the
-  UI resumes polling after refresh. The synchronous endpoint exists only for
-  backwards-compatible trusted clients and tests.
+During migration, SongIR 2.0 adapters may sit at engine/export boundaries. They
+must not become a second write path.
 
-## 2. Code rules
+The E1-A first-preparation bridge is the sole temporary whole-snapshot
+exception: it accepts only an untouched raw revision zero, appends an audited
+`repair` command/revision with a document-wide conflict fence, and cannot run
+over manual edits. Do not reuse it for repair reruns, humanization or AI;
+those require E2 proposal operations and Apply/Reject.
 
-- Prefer typed dataclasses or Pydantic models at module boundaries. Do not add
-  unstructured dictionaries where a stable contract exists.
-- Keep functions focused. When branching obscures one responsibility, extract
-  a named helper; do not suppress complexity merely to satisfy a check.
-- No duplicate orchestration paths, commented-out implementations, fake UI
-  data, developer-specific absolute paths, or compatibility code without an
-  identified caller and removal condition.
-- Errors must be classified as fatal, partial, or warning. Never catch a broad
-  exception and report success. User-facing errors may not expose secrets or
-  internal paths.
-- Every destructive transformation must produce a traceable `Transformation`.
-- `faithful` mode never applies LLM note rewrite decisions. Arrangement mode,
-  model identity, prompt version, and knowledge snapshot are pinned per run.
-- External calls require authentication, bounded timeouts, validated public
-  destinations, redirects disabled unless explicitly reviewed, and tests with
-  no real network access.
-- Client request timeouts are not job cancellation. A disconnected browser
-  must not mark server-side work failed; duplicate active jobs are rejected,
-  and every background failure must move the job to a terminal state.
-- Retries must be idempotent. LLM retries, worker recovery and repeated client
-  requests may not apply a transformation twice or create a false success.
-- Runtime data writes must be atomic where readers can observe the file. Shared
-  knowledge writes also require a process-safe lock.
-- Learning inputs require rights, review, and split metadata. New snapshots are
-  candidates until independent A/B evidence passes deterministic no-regression
-  gates; rollback may restore promoted snapshots only.
-- Every knowledge provenance value is a stable ID declared in
-  `knowledge/assets/source_catalog.json`; file paths, song names and ad-hoc
-  bibliography strings are forbidden. Empirical/derived knowledge requires a
-  verified source with `derive_aggregates` permission.
-- Corpus statistics are calculated within each score/excerpt and only then
-  aggregated. Chords, transitions, overlaps and phrase paths may never cross a
-  file, track or train/validation/test boundary.
-- Knowledge resolution layers generic defaults before style and role overrides.
-  A role-scoped entry must never satisfy a query that omitted the role.
-- Database schema changes are Alembic revisions. `create_all()` is allowed only
-  in isolated tests, never as the application migration mechanism.
+- Routes authenticate, authorize, validate transport, open transactions and map
+  typed errors. They do not implement music operations or rebasing.
+- Application services own use cases, not rendering or instrument algorithms.
+- The command service alone accepts persisted musical mutations.
+- Instrument pipelines own physical/notation realization for their family.
+- Validators are independent from both command authors and exporters.
+- Frontend components render state and dispatch commands; they do not re-create
+  backend fingering, drum mapping or validation policy.
+- Knowledge seeds are immutable. Runtime learning writes governed snapshots.
 
-## 3. Status contract
+## 3. Document and command discipline
 
-Project repair status has one meaning across API, database, UI, and manifest:
+### Contracts
 
-- `processing`: work started and has not reached a terminal outcome.
-- `repaired`: every note-bearing source track had a supported pipeline and all
-  those pipelines completed.
-- `partial`: at least one instrument plugin completed, but another track failed
-  execution or professional-score validation. The failed track and unresolved
-  source events remain explicit in the manifest and SongIR.
-- `failed`: no instrument plugin completed or the project-level workflow
-  failed before an output could be produced.
+- Use Pydantic/dataclass/domain types at module boundaries. A new stable payload
+  cannot be an untyped dictionary.
+- ScoreOperation is a closed versioned union. Adding an operation requires
+  schema validation, apply, inverse/undo, conflict, permission, serialization
+  and frontend dispatch tests.
+- Every operation states its stable target IDs, exact positions when applicable
+  and field-level preconditions.
+- `command_id` is a client-generated idempotency key. Retrying the same command
+  returns the same accepted/rejected outcome and never duplicates an edit.
+- Canonical serialization is deterministic: normalized rational values,
+  deterministic ordering and content hash tests are required.
+- Unsupported major schema or command versions fail explicitly; they are never
+  guessed.
 
-## 4. Change workflow
+### Transaction behavior
 
-1. Write a short issue or task statement with outcome, user-visible acceptance,
-   musical invariant, affected contracts, failure/degraded behavior, regression
-   fixture/metric, non-goals, and rollback or migration needs.
-2. Inspect existing ownership boundaries and tests. Reuse the current service
-   and IR contracts instead of adding a parallel path.
-3. Add or update a failing test for each behavior change. Bug fixes require a
-   regression test that fails for the original cause.
-4. Implement the smallest coherent change. Keep refactors separate from
-   unrelated product behavior when practical.
-5. Run the local gates below. For security, migration, job, LLM or export
-   changes, also run the relevant real boundary integration scenario.
-6. Update documentation and `.env.example` when behavior, operations, or
-   configuration changes.
-7. Review the diff for unrelated formatting, generated artifacts, secrets,
-   absolute paths, stale code, and missing failure handling.
-8. Merge only after CI passes and acceptance criteria are demonstrably met.
+- Apply operations to an isolated document, validate, then persist command and
+  revision atomically.
+- Hard musical or referential errors block commit. Warnings remain typed and
+  visible at anchored score locations.
+- Rebase only when stable targets and protected fields are demonstrably
+  disjoint. Do not use silent last-writer-wins for score content.
+- Undo is a compensating transaction against current state, not a global
+  revision pointer reset.
+- Batch repair/AI transactions carry a semantic summary and retain one-step
+  undo even when they contain many primitive operations.
+- No arbitrary JSON Patch, direct ORM score mutation or renderer-model
+  persistence endpoint is allowed.
 
-Musical-intelligence changes must add at least one machine-checkable
-playability invariant (pitch/string/fret, span, technique relation, rhythm, or
-export round trip) and a comparison against the current knowledge snapshot.
-Changes to empirical formulas also rebuild the asset from its pinned source,
-report held-out split drift, and keep the frozen test split out of tuning.
+### Schema migration
 
-## 5. Required local gates
+- ScoreDocument changes require a version decision, adapter/migration,
+  canonical fixtures, hash expectation, validator tests and export tests.
+- Database changes use Alembic. `create_all()` is isolated-test-only.
+- A temporary dual representation declares which side is derived, how equality
+  is checked and the milestone that removes it.
+- Migrations are tested from a copy of the current schema with representative
+  projects, source files, SongIR artifacts and exports.
+
+## 4. Frontend editor rules
+
+- The project route is the product workspace; do not rebuild separate repair,
+  AI and export applications.
+- Score selection has one typed state model used by commands, playback,
+  comments and AI. Screen coordinates are translated through the renderer
+  adapter and never persisted.
+- Renderer-specific objects stay inside the adapter. Components use BandPilot
+  IDs and command types.
+- Routine note entry and navigation are keyboard-first and do not require
+  opening the inspector.
+- Guitar/bass numeric entry targets the active string caret, supports a short
+  multi-digit fret buffer and must pass tuning/fret validation before dispatch.
+  Drum, keyboard and generic input use family-aware palettes instead of
+  pretending that one pitched-note interaction fits every staff.
+- Every command has explicit optimistic, saving, accepted, rejected, conflict
+  and offline behavior. Do not show success from a timer or assumed response.
+- Autosave means accepted server commands, not merely local React state.
+- Undo/redo availability comes from command history and current preconditions.
+- Long operations appear as durable tasks that recover after route change,
+  refresh and reconnect.
+- Panels are contextual and progressively disclosed. The score remains the
+  dominant workspace; technical logs are details, not default UI.
+- UI strings describe user outcomes. Internal class names, schema jargon,
+  provider payloads and stack traces do not enter normal product copy.
+- Feature flags wrap complete vertical behavior, not dead buttons or fake
+  screens.
+
+### Accessibility and interaction testing
+
+- Core editor commands, including copy/cut/paste, are reachable by keyboard, with visible focus and
+  non-color-only state.
+- Shortcuts avoid browser/OS collisions where practical and are discoverable in
+  the command palette.
+- Pointer hit areas, zoom and notation contrast are tested at supported browser
+  scale factors.
+- Remote selections remain distinguishable but never obscure the local caret or
+  printed notation.
+
+## 5. Renderer rules
+
+- AlphaTab is a renderer/player candidate behind an adapter, not an editor
+  architecture.
+- Vite integration uses the official `@coderline/alphatab-vite` plugin so
+  renderer assets, Web Workers and AudioWorklets stay compatible. Do not
+  replace it with hand-copied fonts/soundfonts that leave playback uninitialized.
+- A renderer change must preserve stable-ID hit mapping, selection, playback
+  synchronization and required notation semantics.
+- Do not generate GP5 on each edit merely to refresh the view.
+- Keep renderer/player initialization separate from document projection.
+  Accepted score commands rerender the existing AlphaTab API; they must not
+  recreate the player or reload the soundfont for every edit.
+- Visual correctness alone is insufficient. A notation feature must also edit,
+  undo, collaborate, persist, play and round-trip through required exports.
+- Performance work starts with measurement on the committed mixed-score
+  fixture. Avoid caching that can show a revision different from the saved
+  document.
+- Renderer licenses and redistributed assets/workers/fonts are reviewed before
+  production integration.
+
+## 6. Collaboration rules
+
+- REST and WebSocket paths use the same membership roles and authorization
+  policy.
+- Persist commands, comments and versions. Presence, viewport and live cursor
+  awareness are ephemeral and contain no durable music truth.
+- Client projection may be optimistic, but accepted revision order is
+  server-authoritative.
+- Reconnect sends the last accepted revision and command IDs, then receives
+  missing commands or a verified snapshot.
+- Access revocation closes active document sessions and invalidates artifact
+  access.
+- If CRDT tooling is used, raw updates may not bypass typed commands,
+  validation, audit or permissions.
+- Multi-instance fan-out is tested for duplicate, delayed and reordered
+  delivery. Accepted commands remain idempotent.
+- Offline concurrent editing is not inferred from local caching; it requires a
+  separate product milestone and conflict contract.
+
+## 7. Tasks, repair and LLM proposals
+
+### Durable tasks
+
+- Browser-facing long work uses start-and-resume semantics. Starting returns a
+  durable task ID; refresh or disconnect does not cancel server work.
+- State changes are persisted real stages, not simulated frontend percentages.
+- Every failure reaches a terminal typed state; broad exception handling cannot
+  report success.
+- Worker retry and recovery are idempotent and cannot apply a proposal or create
+  an export twice.
+- Cancellation is cooperative and becomes final only when the worker
+  acknowledges no commit occurred after cancellation.
+
+### Proposal safety
+
+- Repair, make-playable and LLM work read a pinned base revision and write a
+  candidate proposal, not the live document.
+- Apply rechecks base revision, permissions, preconditions and hard validation
+  through the command service.
+- Reject changes no score state. Stale proposals are explicitly rebased or
+  regenerated; never blindly applied.
+- `faithful` mode never changes source pitches through LLM rewriting.
+- Humanization normally writes performance-layer operations rather than visible
+  notation.
+
+### External model calls
+
+- External calls require authentication, bounded connect/read timeout,
+  validated public destinations, disabled redirects unless reviewed, no
+  inherited proxy trust and deterministic mocked tests.
+- Send only selected score context plus the minimum musical neighborhood.
+- Constrain output with a versioned operation schema and intent vocabulary.
+- Record provider/model, prompt/schema, knowledge snapshot, request fingerprint,
+  attempt result and latency. Never log keys or unnecessary score content.
+- Model output is a proposal. Deterministic resolution and hard validation keep
+  authority.
+- Provider failure cannot block manual editing or corrupt current state.
+- A user's BYOK secret cannot be used by or revealed to another collaborator.
+
+## 8. Musical, export and knowledge rules
+
+- Every source note is represented or explicitly unresolved. Silent deletion
+  requires an explicit user-authorized creative operation.
+- Guitar/bass pitch-string-fret truth, string collision, span and technique
+  relation invariants are machine checked.
+- Drum score time comes from onsets and notation voice; sampler note-off gates
+  remain performance data. Five-line voice/stem and exact GM mapping rules are
+  validated.
+- A tie is one musical relation represented by paired adjacent endpoints in
+  the same staff/voice lane; create/remove both endpoints in one transaction and
+  validate matching pitched content before commit.
+- Dynamics have two coordinated meanings: a written beat mark and note-level
+  performance velocity. Editor actions update both atomically; exporters may
+  quantize velocity only at a documented format boundary.
+- Track creation copies only the score-wide measure/time-signature shape and
+  starts with no notes; it never clones another instrument's musical content.
+  Reorder commands name every stable track ID exactly once. Retuning or changing
+  capo preserves written pitch by recalculating all frets in the same atomic
+  transaction and rejects any unplayable result.
+- Mixer state is normalized in ScoreDocument (`volume` 0..1, `pan` -1..1,
+  mute/solo booleans). Renderer and exporter quantization belongs at their
+  adapters, not in canonical state.
+- Keyboard hands, staff, voices and fingering remain typed, not inferred only
+  in an exporter.
+- A new instrument family needs a plugin, typed realization, adapter,
+  validator, editor palette, fixtures and exporter policy.
+- A writer's own parse-back is necessary but not sufficient. GP5 changes run
+  PyGuitarPro, AlphaTab and the release Guitar Pro smoke scenario.
+- Corpus input requires rights, review, stable source ID and leakage-safe split.
+  Paths, song names and ad-hoc bibliography strings are forbidden provenance.
+- Corpus statistics are calculated within each score/track before aggregation;
+  transitions or chords never cross file or split boundaries.
+- Candidate knowledge is inactive until independent deterministic
+  no-regression gates pass; rollback activates only a previously promoted
+  snapshot.
+- Promoting knowledge never rewrites an existing document revision.
+
+## 9. Change workflow
+
+1. Write the roadmap intake fields: outcome, acceptance, musical invariant,
+   document/command impact, collaboration/permission impact, affected
+   API/export/migration contracts, failure/offline behavior, fixture/metric,
+   observability, non-goals, rollout and rollback.
+2. Trace the existing data owner and write boundary. Delete or adapt a competing
+   path before adding another one.
+3. Add a failing contract or regression test for each behavior change.
+4. Implement the smallest complete vertical slice. A schema-only layer without
+   a caller is allowed only in the explicitly scoped E0 contract milestone.
+5. Run focused tests continuously, then the required local gates.
+6. Exercise the real boundary for migrations, collaboration, jobs, LLM,
+   renderer and export changes.
+7. Update the authoritative docs, API types, migrations, configuration and
+   operational notes in the same change.
+8. Review the diff for unrelated formatting, generated artifacts, secrets,
+   absolute paths, duplicate state, dead flags, fake UI data and silent failure.
+9. Merge only after CI and user-visible acceptance pass with recorded evidence.
+
+Refactors and behavior changes are separate when they can be reviewed
+independently. A major editor milestone is delivered through small vertical pull
+requests, not one long-lived rewrite branch.
+
+## 10. Required test matrix
+
+### Every score operation
+
+- schema accept/reject;
+- deterministic apply and canonical hash;
+- inverse/undo and redo preconditions;
+- invalid target/reference;
+- stale base, safe rebase and real conflict;
+- permission boundary;
+- serialization and refresh;
+- relevant musical invariant;
+- renderer projection and required export round-trip.
+
+### Collaboration changes
+
+- two clients on disjoint edits;
+- same-field and delete/edit conflict;
+- duplicate/reordered broadcast;
+- reconnect/catch-up from command and snapshot;
+- undo preserving another actor's work;
+- role downgrade/revocation and artifact authorization;
+- multi-instance behavior where applicable.
+
+### Proposal changes
+
+- strict mocked provider/engine output;
+- invalid and out-of-selection operation;
+- validation failure;
+- stale proposal;
+- Apply/Reject/undo;
+- timeout, retry and cancellation;
+- BYOK ownership and redaction.
+
+### Migration and release fixtures
+
+- current database -> target migration;
+- current SongIR -> ScoreDocument conversion;
+- mixed guitar/drum/bass/keys/generic score;
+- long 100+ measure score;
+- GP5 PyGuitarPro + AlphaTab automation and Guitar Pro release smoke;
+- immutable source and historical artifact verification.
+
+## 11. Local gates
+
+Current repository gates:
 
 ```bash
 cd backend
@@ -148,12 +349,19 @@ npm test
 npm run build
 ```
 
-External GP corpus tests are opt-in and use
-`FRETPILOR_TEST_REFERENCE_ZIP=/absolute/path/to/archive.zip`. CI and the normal
-unit suite never depend on that archive.
+The current editor browser gate is an in-app Browser run recorded in
+`docs/evidence/alphatab-editor-spike.md`; it covers real hit testing, command
+execution, persistence, rerender and playback on the 104-measure fixture. A
+committed Playwright-equivalent suite is not yet present. Until that automation
+lands, any editor change must include a repeatable browser-gate note in the
+evidence file rather than claiming CI-level E2E coverage.
 
-The public GuitarSet KB2 seed is reproducible from the verified 360-file JAMS
-annotation directory (the artifact hash is pinned in `source_catalog.json`):
+External GP corpus tests are opt-in and use
+`FRETPILOR_TEST_REFERENCE_ZIP=/absolute/path/to/archive.zip`. Normal CI never
+depends on the private archive.
+
+The public GuitarSet seed remains reproducible from its pinned verified
+annotation artifact:
 
 ```bash
 cd backend
@@ -161,28 +369,36 @@ uv run python -m fretpilot.elearning.guitarset /path/to/annotations \
   --output src/fretpilot/knowledge/assets/kb2_performance.json
 ```
 
-Never point this builder at a private or rights-unknown corpus. Such corpora use
-the candidate/evaluation workflow and require catalogue registration first.
+Never use a private or rights-unknown corpus with this seed builder.
 
-GP5 changes also require the committed compatibility fixture to pass the
-frontend AlphaTab importer. A release candidate that changes GP5 structure is
-opened once in Guitar Pro 8 and the tested application version is recorded in
-the task or release evidence.
+## 12. Definition of done
 
-## 6. Definition of done
+A task is complete only when:
 
-A task is complete only when its acceptance criteria pass, migrations and
-contracts are updated, failure states are observable, tests are deterministic,
-active documentation is current, CI is green, and no unused/dead/fake
-implementation remains in the changed area. Passing a happy-path demo or a
-single library's parse-back alone is not completion.
+- its real product acceptance scenario passes;
+- document/command, migration, permission and failure contracts are current;
+- state is durable and observable, with no simulated success;
+- tests are deterministic and relevant performance limits are measured;
+- undo, collaboration and export behavior are covered when affected;
+- active documentation and generated API types are current;
+- CI is green;
+- rollout/rollback is credible;
+- no unused, dead, fake or duplicate implementation remains in the changed
+  area.
 
-## 7. Pull-request scope and review
+A demo that only edits renderer memory, a benchmark-only music improvement, or
+an exporter parsing its own file is not completion.
 
-- One logical outcome per pull request. Split architecture migrations from new
-  feature families when they can be reviewed independently.
-- Call out database, IR, API, security, and operational compatibility impacts.
-- High-risk changes require explicit tests: auth/SSRF/archive handling,
-  migration from existing data, multi-track exports, and KB promotion/rollback.
-- Reviewers reject silent fallback, route-level business logic, mutable package
-  data, and output status that does not match the actual per-track results.
+## 13. Pull-request and review policy
+
+- One logical outcome per pull request. Prefer contract -> persistence -> thin
+  vertical slice -> breadth over a cross-layer mega-PR.
+- State database, document schema, API, WebSocket, security, export and
+  operational compatibility impacts in the description.
+- Include before/after evidence for musical formulas, renderer performance and
+  user journey behavior.
+- High-risk changes require migration, auth, reconnect, retry, SSRF and
+  multi-track export scenarios as applicable.
+- Reviewers reject arbitrary score JSON mutation, route-level music logic,
+  client-only autosave claims, silent conflict fallback, mutable package data,
+  unbounded prompts and status that does not reflect durable truth.

@@ -25,6 +25,7 @@ class DrumGroundTruthNote:
         piece: Mapped drum piece name (e.g. "kick", "snare").
         velocity: MIDI velocity (1–127) as recorded in the tab.
         duration_beats: Note duration in beats.
+        voice: Source GP voice number (1 or 2).
         is_tie: Whether the note is a tie continuation (should be excluded).
     """
 
@@ -34,6 +35,7 @@ class DrumGroundTruthNote:
     piece: str
     velocity: int
     duration_beats: float
+    voice: int
     is_tie: bool
 
 
@@ -84,6 +86,11 @@ class DrumStyleStats:
     hand_switch_pattern: str  # dominant 4-letter pattern, e.g. "RLRL", "RRLL"
     # Kit usage
     piece_distribution: dict[str, float]  # {piece: frequency}
+    # Professional notation evidence
+    duration_distribution: dict[str, float]  # {written beats: frequency}
+    quarter_or_shorter_rate: float
+    voice_two_rate: float
+    foot_voice_two_rate: float
 
 
 @dataclass(slots=True)

@@ -1,10 +1,4 @@
-/**
- * FretPilot v2 Design Tokens — Dark-first「录音棚」美学 v3.
- *
- * 层次：canvas (sidebar) < surface (main) < elevated (card) < subtle (hover)
- * 品牌：琥珀/铜色 #E8A24B（琴弦金属 + 音孔玫瑰木）
- * 声部：Lead = 冷青 / Rhythm = 琥珀
- */
+/** BandPilot design tokens — warm editorial workspace + studio navigation. */
 
 export const tokens = {
   dark: {
@@ -35,34 +29,34 @@ export const tokens = {
   },
 
   light: {
-    canvas: "#FFFFFF",
-    surface: "#F9FAFB",
+    canvas: "#F4F1EA",
+    surface: "#FAF9F6",
     elevated: "#FFFFFF",
-    subtle: "#F3F4F6",
+    subtle: "#F0EDE6",
 
-    textPrimary: "#111827",
-    textSecondary: "#6B7280",
-    textTertiary: "#9CA3AF",
+    textPrimary: "#17191D",
+    textSecondary: "#5F625F",
+    textTertiary: "#8B8E89",
 
-    brandPrimary: "#D4882E",
-    brandHover: "#B36F1E",
-    brandAccent: "#C97A35",
+    brandPrimary: "#E8642D",
+    brandHover: "#CC4E1C",
+    brandAccent: "#F2A65A",
 
-    leadColor: "#0D9488",
-    rhythmColor: "#D4882E",
+    leadColor: "#4355D8",
+    rhythmColor: "#E8642D",
 
     success: "#10B981",
     warning: "#F59E0B",
     error: "#EF4444",
     info: "#3B82F6",
 
-    borderDefault: "#E5E7EB",
-    borderHover: "#D1D5DB",
-    borderActive: "#D4882E",
+    borderDefault: "#DEDAD1",
+    borderHover: "#C8C2B7",
+    borderActive: "#E8642D",
   },
 } as const;
 
-export const palette = tokens.dark;
+export const palette = tokens.light;
 
 export const streamColors = {
   lead: palette.leadColor,

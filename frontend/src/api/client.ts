@@ -8,6 +8,7 @@ import type {
   ByokConfig,
   ByokResponse,
   ByokTestResponse,
+  BlankProjectRequest,
   DrumLearnResponse,
   ExportRecord,
   ExportResponse,
@@ -18,6 +19,10 @@ import type {
   RepairJob,
   RepairReport,
   RepairResponse,
+  ScoreCommandCatchup,
+  ScoreCommandRequest,
+  ScoreCommandResult,
+  ScoreDocumentEnvelope,
   TrackSummaryItem,
   TuningInfo,
   VersionDiff,
@@ -124,6 +129,11 @@ export const projectsApi = {
     return unwrap(res.data) as ProjectItem;
   },
 
+  async createBlank(request: BlankProjectRequest): Promise<ProjectItem> {
+    const res = await http.post("/projects/blank", request);
+    return unwrap(res.data) as ProjectItem;
+  },
+
   async get(id: number): Promise<ProjectDetail> {
     const res = await http.get(`/projects/${id}`);
     return unwrap(res.data) as ProjectDetail;
@@ -173,6 +183,62 @@ export const projectsApi = {
   },
 };
 
+// ─── ScoreDocument API ───
+
+export const scoreDocumentsApi = {
+  async bootstrap(projectId: number): Promise<ScoreDocumentEnvelope> {
+    const res = await http.post(`/projects/${projectId}/document/bootstrap`);
+    return unwrap(res.data) as ScoreDocumentEnvelope;
+  },
+
+  async promotePrepared(projectId: number): Promise<ScoreDocumentEnvelope> {
+    const res = await http.post(`/projects/${projectId}/document/promote-prepared`);
+    return unwrap(res.data) as ScoreDocumentEnvelope;
+  },
+
+  async get(
+    projectId: number,
+    revision?: number,
+  ): Promise<ScoreDocumentEnvelope> {
+    const res = await http.get(`/projects/${projectId}/document`, {
+      params: revision === undefined ? undefined : { revision },
+    });
+    return unwrap(res.data) as ScoreDocumentEnvelope;
+  },
+
+  async submit(
+    projectId: number,
+    command: ScoreCommandRequest,
+  ): Promise<ScoreCommandResult> {
+    const res = await http.post(`/projects/${projectId}/commands`, command);
+    return unwrap(res.data) as ScoreCommandResult;
+  },
+
+  async undo(
+    projectId: number,
+    targetCommandId: string,
+    commandId: string,
+    createdAt: string,
+  ): Promise<ScoreCommandResult> {
+    const res = await http.post(
+      `/projects/${projectId}/commands/${encodeURIComponent(targetCommandId)}/undo`,
+      { command_id: commandId, created_at: createdAt },
+    );
+    return unwrap(res.data) as ScoreCommandResult;
+  },
+
+  async commands(
+    projectId: number,
+    after: number,
+    limit = 100,
+  ): Promise<ScoreCommandCatchup> {
+    const res = await http.get(`/projects/${projectId}/commands`, {
+      params: { after, limit },
+    });
+    return unwrap(res.data) as ScoreCommandCatchup;
+  },
+};
+
 // ─── Tracks API (BandPilot multi-instrument) ───
 
 export const tracksApi = {
@@ -207,8 +273,15 @@ export const tuningsApi = {
 // ─── Exports API ───
 
 export const exportsApi = {
-  async export(id: number, format: string): Promise<ExportResponse> {
-    const res = await http.post(`/projects/${id}/export`, { format });
+  async export(
+    id: number,
+    format: string,
+    revision?: number,
+  ): Promise<ExportResponse> {
+    const res = await http.post(`/projects/${id}/export`, {
+      format,
+      ...(revision === undefined ? {} : { revision }),
+    });
     return unwrap(res.data) as ExportResponse;
   },
 
@@ -256,16 +329,9 @@ export const exportsApi = {
   async exportAndDownload(
     id: number,
     format: string,
+    revision?: number,
   ): Promise<{ blob: Blob; filename: string }> {
-    await this.export(id, format);
-    const list = await this.list(id);
-    // The backend orders records by created_at DESC, so the newest export
-    // (the one we just created) is at index 0 — not the last item.
-    const items = list.items;
-    const latest = items.length > 0 ? items[0] : null;
-    if (!latest) {
-      throw new Error("Export was created but no export record was found.");
-    }
+    const created = await this.export(id, format, revision);
     const fallbackNames: Record<string, string> = {
       gp5: "output.gp5",
       musicxml: "output.musicxml",
@@ -274,6 +340,16 @@ export const exportsApi = {
       humanized_ample_eclipse_midi: "output_humanized_ample.mid",
     };
     const fallbackFilename = fallbackNames[format] ?? "bandpilot-export.bin";
+    const exactId = /\/exports\/(\d+)\/download(?:$|\?)/.exec(created.download_url)?.[1];
+    if (exactId) return this.download(id, Number(exactId), fallbackFilename);
+
+    // Compatibility fallback for older servers that did not expose the record id.
+    const list = await this.list(id);
+    const latest = list.items.find((item) => (
+      item.format_id === format &&
+      (created.revision_hash === null || item.revision_hash === created.revision_hash)
+    ));
+    if (!latest) throw new Error("Export was created but its artifact record was not found.");
     return this.download(id, latest.id, fallbackFilename);
   },
 

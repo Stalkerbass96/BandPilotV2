@@ -137,7 +137,7 @@ class DrumReader:
         notes: list[DrumGroundTruthNote] = []
         for measure in track.measures:
             measure_start_tick = measure.start
-            for voice in measure.voices:
+            for voice_number, voice in enumerate(measure.voices, start=1):
                 for beat in voice.beats:
                     beat_start_tick = beat.start
                     beat_in_measure = (beat_start_tick - measure_start_tick) / QUARTER_TICKS
@@ -160,6 +160,7 @@ class DrumReader:
                             piece=map_pitch_to_piece(pitch),
                             velocity=velocity,
                             duration_beats=duration_beats,
+                            voice=voice_number,
                             is_tie=False,
                         ))
         return notes

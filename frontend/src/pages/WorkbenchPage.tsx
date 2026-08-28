@@ -35,6 +35,7 @@ import DrumVisualizer from "../components/DrumVisualizer";
 import PatternTimeline from "../components/PatternTimeline";
 import ResultPreview from "../components/ResultPreview";
 import TabViewer from "../components/TabViewer";
+import JourneyStepper from "../components/JourneyStepper";
 import { WorkbenchSkeleton } from "../components/Skeletons";
 import type {
   CleanupInfo,
@@ -57,10 +58,10 @@ const STAGE_COUNT = 8;
 
 /** Semantic label for fidelity slider value. */
 function fidelityLabel(v: number): { title: string; desc: string } {
-  if (v < 0.25) return { title: "Aggressive", desc: "强力清理 · 更积极的节奏规范" };
-  if (v < 0.5) return { title: "Balanced", desc: "平衡修复 · 适中量化 · 保留主要细节" };
-  if (v < 0.75) return { title: "Preserving", desc: "保留 MIDI 细节 · 32nd note 网格 · 少量修正" };
-  return { title: "Minimal", desc: "最小干预 · 仅清理超范围与重叠" };
+  if (v < 0.25) return { title: "Flexible", desc: "More cleanup and stronger rhythm correction." };
+  if (v < 0.5) return { title: "Balanced", desc: "A practical balance between cleanup and source detail." };
+  if (v < 0.75) return { title: "Source-first", desc: "Keeps the MIDI detail and makes only careful corrections." };
+  return { title: "Minimal", desc: "Only fixes notes that are out of range or overlap." };
 }
 
 function familyIcon(family: string): string {
@@ -79,7 +80,7 @@ export default function WorkbenchPage(): JSX.Element {
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [projectLoading, setProjectLoading] = useState(true);
   const [fidelity, setFidelity] = useState(0.5);
-  const [arrangementMode, setArrangementMode] = useState<ArrangementMode>("faithful");
+  const [arrangementMode, setArrangementMode] = useState<ArrangementMode>("playable_arrangement");
   const [tunings, setTunings] = useState<TuningInfo[]>([]);
   const [tuningId, setTuningId] = useState<string>("");
   const [byokActive, setByokActive] = useState(false);
@@ -105,7 +106,7 @@ export default function WorkbenchPage(): JSX.Element {
   const [scoreData, setScoreData] = useState<ArrayBuffer | null>(null);
   const [error, setError] = useState("");
   const [previewError, setPreviewError] = useState("");
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
 
   const stageTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollGenerationRef = useRef(0);
@@ -311,10 +312,11 @@ export default function WorkbenchPage(): JSX.Element {
 
   return (
     <Box className="flex flex-col gap-5">
-      {/* Header */}
-      <Box className="flex items-center justify-between gap-4 flex-wrap">
+      <JourneyStepper activeStep={1} />
+      <Box className="flex items-end justify-between gap-4 flex-wrap mt-2">
         <Box>
-          <Typography variant="h5" fontWeight={700} sx={{ color: palette.textPrimary }}>
+          <Typography className="bp-eyebrow">Prepare your score</Typography>
+          <Typography variant="h4" fontWeight={800} sx={{ color: palette.textPrimary, letterSpacing: "-.035em", mt: 1 }}>
             {project.title}
           </Typography>
           <Box className="flex items-center gap-2 mt-1 flex-wrap">
@@ -323,44 +325,22 @@ export default function WorkbenchPage(): JSX.Element {
               label={project.source_filename}
               sx={{ backgroundColor: palette.subtle, color: palette.textSecondary, border: "none" }}
             />
-            <Chip
-              size="small"
-              label={project.style_label}
-              sx={{
-                backgroundColor: project.style_label !== "unknown" ? `${palette.brandPrimary}18` : palette.subtle,
-                color: project.style_label !== "unknown" ? palette.brandPrimary : palette.textTertiary,
-                fontWeight: 600, border: "none",
-              }}
-            />
-            <Chip
-              size="small"
-              label={byokActive ? "LLM available" : "Deterministic mode"}
-              sx={{
-                backgroundColor: byokActive ? `${palette.success}18` : `${palette.warning}18`,
-                color: byokActive ? palette.success : palette.warning,
-                fontWeight: 600, border: "none",
-              }}
-            />
-            {project.degraded_mode && (
-              <Chip size="small" label="degraded" sx={{ backgroundColor: `${palette.warning}18`, color: palette.warning, fontWeight: 600, border: "none" }} />
-            )}
+            {project.style_label !== "unknown" && <Typography sx={{ color: palette.textTertiary, fontSize: 12 }}>Detected style: {project.style_label}</Typography>}
           </Box>
         </Box>
-        <Button
+        {canExportProject(project.status) && <Button
           variant="outlined"
-          size="small"
           onClick={() => navigate(`/projects/${project.id}/export`)}
-          sx={{ textTransform: "none", borderColor: palette.borderDefault, color: palette.textSecondary }}
+          sx={{ borderColor: palette.borderHover, color: palette.textPrimary }}
         >
-          Export →
-        </Button>
+          Export score
+        </Button>}
       </Box>
 
       {error && <Alert severity="error" sx={{ borderRadius: 2 }}>{error}</Alert>}
       {isRunning && (
         <Alert severity="info" sx={{ borderRadius: 2 }}>
-          Repair is running as a background job. LLM providers may take longer,
-          but it is safe to refresh this page or return to the project later.
+          We’re building your score in the background. You can safely leave this page and come back later.
         </Alert>
       )}
       {previewError && (
@@ -378,7 +358,7 @@ export default function WorkbenchPage(): JSX.Element {
           severity={repairResult.validationIssues.some((issue) => issue.severity === "error") ? "error" : "warning"}
           sx={{ borderRadius: 2 }}
         >
-          Professional validation: {repairResult.validationStatus}.
+          This draft needs a little attention before performance.
           {repairResult.validationIssues.slice(0, 3).map((issue) => ` ${issue.message}`).join("")}
           {repairResult.validationIssues.length > 3
             ? ` (+${repairResult.validationIssues.length - 3} more)`
@@ -391,7 +371,7 @@ export default function WorkbenchPage(): JSX.Element {
         className="flex gap-5"
         sx={{ flexDirection: { xs: "column", xl: "row" } }}
       >
-        {/* ── Left panel: Config ── */}
+        {/* Keep the default decision path together in one clear panel. */}
         <Box
           className="flex-shrink-0 rounded-xl p-5 flex flex-col gap-5"
           sx={{ width: { xs: "100%", xl: 280 }, backgroundColor: palette.elevated, border: `1px solid ${palette.borderDefault}` }}
@@ -400,9 +380,9 @@ export default function WorkbenchPage(): JSX.Element {
           {tracks.length > 0 && (
             <Box>
               <Typography variant="caption" fontWeight={600} sx={{ color: palette.textTertiary, textTransform: "uppercase", letterSpacing: 0.5 }}>
-                Detected Tracks
+                1 · Check the instruments
               </Typography>
-              <Stack spacing={1} sx={{ mt: 1.5 }}>
+              <Box className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-7 gap-y-2" sx={{ mt: 1.5 }}>
                 {tracks.map((t) => (
                   <Box key={t.index} className="flex items-center justify-between">
                     <Box className="flex items-center gap-1.5">
@@ -431,7 +411,7 @@ export default function WorkbenchPage(): JSX.Element {
                     </Select>
                   </Box>
                 ))}
-              </Stack>
+              </Box>
             </Box>
           )}
 
@@ -440,13 +420,14 @@ export default function WorkbenchPage(): JSX.Element {
           {/* Repair config */}
           <Box>
             <Typography variant="subtitle2" fontWeight={700} sx={{ color: palette.textPrimary, mb: 2 }}>
-              Repair Configuration
+              2 · Choose the result
             </Typography>
 
-            {/* Fidelity */}
-            <Box sx={{ mb: 3 }}>
+            <Box component="details" sx={{ mb: 2.5, border: `1px solid ${palette.borderDefault}`, borderRadius: 2.5, p: 1.5, "&[open]": { background: palette.surface } }}>
+              <Box component="summary" sx={{ color: palette.textSecondary, fontSize: 12, fontWeight: 700, cursor: "pointer", listStylePosition: "inside" }}>Advanced settings</Box>
+            <Box sx={{ mt: 2.5, mb: 3 }}>
               <Box className="flex items-center justify-between mb-1">
-                <Typography variant="body2" sx={{ color: palette.textSecondary, fontSize: 13 }}>MIDI Fidelity</Typography>
+                <Typography variant="body2" sx={{ color: palette.textSecondary, fontSize: 13 }}>How much can BandPilot adjust?</Typography>
                 <Chip size="small" label={fl.title} sx={{ backgroundColor: `${palette.brandPrimary}15`, color: palette.brandPrimary, fontWeight: 600, border: "none", fontSize: 11 }} />
               </Box>
               <Slider
@@ -463,7 +444,7 @@ export default function WorkbenchPage(): JSX.Element {
             {/* Guitar tuning is not a global song setting. */}
             {hasGuitar ? (
               <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
-              <InputLabel sx={{ color: palette.textSecondary, fontSize: 13 }}>Tuning</InputLabel>
+              <InputLabel sx={{ color: palette.textSecondary, fontSize: 13 }}>Guitar tuning</InputLabel>
               <Select
                 value={tuningId}
                 label="Tuning"
@@ -473,7 +454,7 @@ export default function WorkbenchPage(): JSX.Element {
                 <MenuItem value="">
                   <Box className="flex items-center gap-2">
                     <BoltIcon sx={{ fontSize: 14, color: palette.brandPrimary }} />
-                    <span>Auto-detect</span>
+                    <span>Let BandPilot choose</span>
                   </Box>
                 </MenuItem>
                 {tunings.map((t) => (
@@ -488,33 +469,34 @@ export default function WorkbenchPage(): JSX.Element {
               </FormControl>
             ) : (
               <Alert severity="info" sx={{ mb: 2.5, borderRadius: 2, fontSize: 12 }}>
-                No guitar track detected; guitar tuning does not apply to this project.
+                No guitar part was found, so tuning is not needed.
               </Alert>
             )}
+            </Box>
 
             <FormControl fullWidth size="small" sx={{ mb: 2.5 }}>
-              <InputLabel sx={{ color: palette.textSecondary, fontSize: 13 }}>Arrangement</InputLabel>
+              <InputLabel sx={{ color: palette.textSecondary, fontSize: 13 }}>Playing goal</InputLabel>
               <Select
                 value={arrangementMode}
-                label="Arrangement"
+                label="Playing goal"
                 onChange={(event) => setArrangementMode(event.target.value as ArrangementMode)}
                 sx={{ fontSize: 13 }}
               >
-                <MenuItem value="faithful">Faithful transcription</MenuItem>
-                <MenuItem value="playable_arrangement">Playable arrangement</MenuItem>
-                <MenuItem value="creative_rewrite">Creative rewrite</MenuItem>
+                <MenuItem value="faithful">Stay close to the original</MenuItem>
+                <MenuItem value="playable_arrangement">Make it natural to play</MenuItem>
+                <MenuItem value="creative_rewrite">Create a new arrangement</MenuItem>
               </Select>
             </FormControl>
             <Typography variant="caption" sx={{ color: palette.textTertiary, display: "block", mt: -1.5, mb: 2.5, fontSize: 11 }}>
               {arrangementMode === "faithful"
-                ? "Preserves source pitch and note intent. No destructive LLM rewrite."
+                ? "Keeps the original notes and musical intent with only essential cleanup."
                 : arrangementMode === "playable_arrangement"
-                  ? "Allows policy-checked playability changes; every transformation is recorded."
-                  : "Allows broader policy-checked rewriting while preserving full traceability."}
+                  ? "Prioritizes comfortable positions, string choices and natural performance. Recommended for most players."
+                  : "Allows broader musical changes while keeping every edit reviewable."}
             </Typography>
             {!byokActive && arrangementMode !== "faithful" && (
               <Alert severity="warning" sx={{ mb: 2.5, borderRadius: 2, fontSize: 12 }}>
-                No LLM key is configured. This mode will use the deterministic fallback advisor.
+                AI enhancement is not connected. BandPilot will still use its built-in playability rules.
               </Alert>
             )}
 
@@ -532,19 +514,19 @@ export default function WorkbenchPage(): JSX.Element {
                 "&.Mui-disabled": { backgroundColor: palette.subtle, color: palette.textTertiary },
               }}
             >
-              {isRunning ? "Repairing…" : "Run Repair Pipeline"}
+              {isRunning ? "Creating your score…" : completed ? "Create again" : "Create playable score"}
             </Button>
           </Box>
         </Box>
 
         {/* ── Center: Progress + Score ── */}
         <Box className="flex-1 flex flex-col gap-4 min-w-0">
-          {hasGuitar && (
+          {hasGuitar && (isRunning || completed) && (
             <PipelineProgress active={isRunning} completed={completed} currentStageIndex={currentStageIndex} />
           )}
 
           {/* Drum pipeline progress — shown when drum tracks are detected */}
-          {(repairResult?.hasDrums || hasDrums) && (
+          {(repairResult?.hasDrums || hasDrums) && (isRunning || completed) && (
             <DrumPipelineProgress active={isRunning} completed={completed} currentStageIndex={drumStageIndex} />
           )}
 
@@ -564,10 +546,11 @@ export default function WorkbenchPage(): JSX.Element {
                 className="rounded-xl p-5"
                 sx={{ backgroundColor: palette.elevated, border: `1px solid ${palette.borderDefault}` }}
               >
-                <Box className="flex items-center gap-2 mb-3">
-                  <Typography variant="subtitle1" fontWeight={700} sx={{ color: palette.textPrimary }}>
-                    Score Preview
-                  </Typography>
+                <Box className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                  <Box className="flex items-center gap-2 flex-wrap">
+                    <Typography variant="subtitle1" fontWeight={700} sx={{ color: palette.textPrimary }}>
+                      Your playable score
+                    </Typography>
                   {repairResult?.separation?.detected && (
                     <Chip size="small" label="Lead + Rhythm" sx={{ backgroundColor: `${streamColors.lead}18`, color: streamColors.lead, fontWeight: 600, border: "none" }} />
                   )}
@@ -584,6 +567,10 @@ export default function WorkbenchPage(): JSX.Element {
                       border: "none",
                     }}
                   />
+                  </Box>
+                  <Button variant="contained" onClick={() => navigate(`/projects/${project.id}/editor`)}>
+                    Open score editor
+                  </Button>
                 </Box>
                 <TabViewer scoreData={scoreData} />
               </Box>
@@ -721,7 +708,7 @@ export default function WorkbenchPage(): JSX.Element {
             sx={{ alignSelf: "flex-start", color: palette.textSecondary, backgroundColor: palette.elevated, border: `1px solid ${palette.borderDefault}`, borderRadius: 2 }}
           >
             <ChevronLeftIcon fontSize="small" />
-            <Typography variant="caption" sx={{ ml: 0.5, color: palette.textSecondary }}>Results</Typography>
+            <Typography variant="caption" sx={{ ml: 0.5, color: palette.textSecondary }}>View technical details</Typography>
           </IconButton>
         )}
       </Box>

@@ -6,6 +6,7 @@ import json
 import logging
 import tempfile
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Literal
 
@@ -20,12 +21,17 @@ from fretpilot.api.deps import get_current_user
 from fretpilot.config import get_settings
 from fretpilot.db.models import ByokConfig, Project, RepairJob, User
 from fretpilot.db.session import get_db, session_scope
+from fretpilot.ir.raw_score_document import (
+    blank_score_document,
+    timeline_to_raw_score_document,
+)
 from fretpilot.ir.serde import load_ir, load_merged_irs
 from fretpilot.ir.song_serde import load_song_ir
 from fretpilot.knowledge.tunings import GuitarTuning, TuningRegistry
 from fretpilot.midi.parser import load_midi
 from fretpilot.orchestrator import classify_track_family
 from fretpilot.services.repair import RepairService
+from fretpilot.services.score_documents import create_score_document
 
 logger = logging.getLogger("fretpilot.api.projects")
 router = APIRouter()
@@ -39,6 +45,14 @@ class ProjectResponse(BaseModel):
     style_label: str
     degraded_mode: bool
     instrument_family: str
+
+
+class BlankProjectRequest(BaseModel):
+    title: str = Field(default="Untitled score", min_length=1, max_length=255)
+    instrument_family: Literal["guitar", "drums", "bass", "keys", "generic"] = "guitar"
+    bpm: float = Field(default=120.0, gt=0, le=400)
+    numerator: int = Field(default=4, ge=1, le=32)
+    denominator: Literal[1, 2, 4, 8, 16, 32] = 4
 
 
 class RepairRequest(BaseModel):
@@ -260,10 +274,6 @@ async def create_project(
     db.add(project)
     db.flush()
 
-    project_dir = _project_path(user, project.id)
-    source_path = project_dir / "source.mid"
-    source_path.write_bytes(content)
-
     family_classifications = [
         classify_track_family(track) for track in timeline.tracks if track.notes
     ]
@@ -299,6 +309,23 @@ async def create_project(
         },
         ensure_ascii=False,
     )
+    raw_document = timeline_to_raw_score_document(
+        timeline,
+        document_id=f"project:{project.id}:document",
+        title=project.title,
+        source_filename=project.source_filename,
+        source_sha256=sha256(content).hexdigest(),
+        classifications=family_classifications,
+    )
+    create_score_document(
+        db,
+        project_id=project.id,
+        document=raw_document,
+        actor_user_id=user.id,
+    )
+    project_dir = _project_path(user, project.id)
+    source_path = project_dir / "source.mid"
+    source_path.write_bytes(content)
     db.commit()
 
     return {"code": 0, "data": ProjectResponse(
@@ -306,6 +333,72 @@ async def create_project(
         status=project.status, style_label=project.style_label, degraded_mode=project.degraded_mode,
         instrument_family=project.instrument_family,
     ).model_dump(), "message": "ok"}
+
+
+@router.post("/blank", response_model=dict)
+def create_blank_project(
+    request: BlankProjectRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Create a project and valid empty ScoreDocument revision zero."""
+
+    project = Project(
+        user_id=user.id,
+        title=request.title,
+        source_filename="",
+        status="draft",
+        instrument_family=request.instrument_family,
+        track_summary=json.dumps(
+            {
+                "tracks": [
+                    {
+                        "index": 0,
+                        "name": request.instrument_family.title(),
+                        "family": request.instrument_family,
+                        "is_guitar": request.instrument_family == "guitar",
+                        "is_drum": request.instrument_family == "drums",
+                        "role": "unknown",
+                        "confidence": 1.0,
+                        "reason": "blank score selection",
+                        "user_overridden": True,
+                        "note_count": 0,
+                    }
+                ]
+            },
+            ensure_ascii=False,
+        ),
+    )
+    db.add(project)
+    db.flush()
+    document = blank_score_document(
+        document_id=f"project:{project.id}:document",
+        title=request.title,
+        family=request.instrument_family,
+        bpm=request.bpm,
+        numerator=request.numerator,
+        denominator=request.denominator,
+    )
+    create_score_document(
+        db,
+        project_id=project.id,
+        document=document,
+        actor_user_id=user.id,
+    )
+    db.commit()
+    return {
+        "code": 0,
+        "data": ProjectResponse(
+            id=project.id,
+            title=project.title,
+            source_filename=project.source_filename,
+            status=project.status,
+            style_label=project.style_label,
+            degraded_mode=project.degraded_mode,
+            instrument_family=project.instrument_family,
+        ).model_dump(),
+        "message": "ok",
+    }
 
 
 @router.get("/{project_id}", response_model=dict)

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BandPilot E0 AlphaTab Probe</title>
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="eyebrow">BandPilot E0 · disposable renderer probe</p>
+        <h1>AlphaTab editor capability</h1>
+      </div>
+      <div class="actions">
+        <button id="mutate" disabled>Raise selected note</button>
+        <button id="play-note" disabled>Play selected note</button>
+      </div>
+    </header>
+    <section class="metrics" aria-label="Probe metrics">
+      <div><span>State</span><strong id="state">building</strong></div>
+      <div><span>Initial render</span><strong id="render-ms">—</strong></div>
+      <div><span>Rerender</span><strong id="rerender-ms">—</strong></div>
+      <div><span>Bound notes</span><strong id="bound-notes">—</strong></div>
+      <div><span>Selected ID</span><strong id="selected-id">none</strong></div>
+      <div><span>Player</span><strong id="player-state">loading</strong></div>
+    </section>
+    <p class="hint">
+      Click a rendered note head or TAB number. The selected AlphaTab object is
+      resolved through an external map to a stable BandPilot ID.
+    </p>
+    <main id="score" aria-label="AlphaTab score probe"></main>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>

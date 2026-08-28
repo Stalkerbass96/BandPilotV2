@@ -106,6 +106,12 @@ class DrumPriorsDeriver:
                 "sample_count": stats.sample_count,
                 "total_notes": stats.total_notes,
                 "top_pieces": dict(list(stats.piece_distribution.items())[:6]),
+                "quarter_or_shorter_rate": stats.quarter_or_shorter_rate,
+                "voice_two_rate": stats.voice_two_rate,
+                "foot_voice_two_rate": stats.foot_voice_two_rate,
+                "top_written_durations": dict(
+                    list(stats.duration_distribution.items())[:6]
+                ),
             }
 
             derived = DrumDerivedPriors(

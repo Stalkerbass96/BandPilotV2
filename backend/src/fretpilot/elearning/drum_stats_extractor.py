@@ -12,6 +12,7 @@ Statistics computed per style:
   - flam_rate / double_stroke_rate: roll/ornament frequency
   - right_hand_rate / hand_switch_pattern: sticking tendency
   - piece_distribution: kit usage histogram
+  - duration_distribution / voice rates: score-notation conventions
 """
 
 from __future__ import annotations
@@ -86,6 +87,10 @@ class DrumStatsExtractor:
                 right_hand_rate=self._compute_right_hand_rate(all_notes),
                 hand_switch_pattern=self._compute_hand_switch_pattern(all_notes),
                 piece_distribution=self._compute_piece_distribution(all_notes),
+                duration_distribution=self._compute_duration_distribution(all_notes),
+                quarter_or_shorter_rate=self._compute_quarter_or_shorter_rate(all_notes),
+                voice_two_rate=self._compute_voice_two_rate(all_notes),
+                foot_voice_two_rate=self._compute_foot_voice_two_rate(all_notes),
             )
             result[style] = stats
             logger.info(
@@ -284,6 +289,51 @@ class DrumStatsExtractor:
         counter: Counter[str] = Counter(n.piece for n in notes)
         total = len(notes)
         return {p: round(c / total, 6) for p, c in sorted(counter.items())}
+
+    @staticmethod
+    def _compute_duration_distribution(
+        notes: list[DrumGroundTruthNote],
+    ) -> dict[str, float]:
+        """Frequency table of source GP written durations in quarter beats."""
+        if not notes:
+            return {}
+        counter: Counter[str] = Counter(
+            f"{note.duration_beats:.6f}" for note in notes
+        )
+        total = len(notes)
+        return {
+            duration: round(count / total, 6)
+            for duration, count in sorted(
+                counter.items(), key=lambda item: (-item[1], item[0])
+            )
+        }
+
+    @staticmethod
+    def _compute_quarter_or_shorter_rate(
+        notes: list[DrumGroundTruthNote],
+    ) -> float:
+        if not notes:
+            return 0.0
+        return round(
+            sum(note.duration_beats <= 1.0 + 1e-8 for note in notes) / len(notes),
+            6,
+        )
+
+    @staticmethod
+    def _compute_voice_two_rate(notes: list[DrumGroundTruthNote]) -> float:
+        if not notes:
+            return 0.0
+        return round(sum(note.voice == 2 for note in notes) / len(notes), 6)
+
+    @staticmethod
+    def _compute_foot_voice_two_rate(notes: list[DrumGroundTruthNote]) -> float:
+        foot_notes = [note for note in notes if note.piece in _FOOT_PIECES]
+        if not foot_notes:
+            return 0.0
+        return round(
+            sum(note.voice == 2 for note in foot_notes) / len(foot_notes),
+            6,
+        )
 
 
 __all__ = ["DrumStatsExtractor"]

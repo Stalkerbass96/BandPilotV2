@@ -1,9 +1,13 @@
 # BandPilot v2
 
-BandPilot turns a multi-track MIDI file into a professional, playable band
-score. The first product goal is a trustworthy Guitar Pro score: correct
-instrument separation, practical guitar/bass fingering, coherent techniques,
-and notation a musician can rehearse without repairing the file by hand.
+BandPilot is evolving into a cloud workspace for creating, repairing, editing
+and rehearsing professional band scores. Its target product experience is a
+Guitar Pro-class browser editor with collaborative editing and safe,
+selection-based natural-language changes.
+
+The implemented MIDI-to-score system remains the musical intelligence inside
+that editor: instrument separation, practical realization, techniques,
+humanization, knowledge retrieval and reproducible export.
 
 ## Current product boundary
 
@@ -18,6 +22,10 @@ and notation a musician can rehearse without repairing the file by hand.
 | Ample Guitar Eclipse MIDI, source-preserved and humanized | Implemented |
 | BYOK LLM style/rewrite advice with deterministic validation and fallback | Implemented |
 | Rights-aware source catalogue, GuitarSet seed priors, governed GP evaluation and candidate snapshots | Implemented baseline |
+| ScoreDocument persistence, full-screen Studio, deterministic caret/range selection, all-family note input, chord/rest editing, duration/voice/transpose, dot/triplet/tie/dynamics, measure insert/duplicate/delete, common guitar techniques, track create/reorder/setup/mixer, optimistic autosave, undo/redo, playback/count-in/selection loop/relative speed/metronome, searchable command palette, bar navigation, notation zoom, page/horizontal layout, same-track copy/cut/paste and revision-pinned GP5/MusicXML/MIDI | Implemented locally — E1-A through E1-D foundation |
+| Remaining advanced notation depth and release-latency qualification | In progress — E1 |
+| Project collaboration, permissions, presence, comments and versions | Planned — E3 |
+| Selection-based LLM edit proposal, notation diff and A/B Apply | Planned — E4 |
 | Production queue workers, cancellation and automatic corpus promotion | Not implemented |
 | Native GP keyboard grand staff and sound profiles beyond Eclipse | Not implemented |
 
@@ -26,23 +34,29 @@ The current professional-quality baseline and the next milestones are in
 covered by automated tests; it does not mean every instrument has reached the
 final musical-quality target.
 
-## Product flow
+## Current implemented flow
 
 ```text
-MIDI upload
+MIDI upload -> immutable source + raw ScoreDocument revision 0
   -> track detection and user correction
   -> async repair job
   -> instrument plugins
-  -> canonical SongIR 2.0
+  -> SongIR 2.0 compatibility artifact
   -> hard validation
-  -> GP5 / MusicXML / humanized MIDI / Eclipse MIDI
+  -> first prepared ScoreDocument revision
+  -> AlphaTab-backed score editor -> typed commands -> optimistic save/undo/redo
+  -> active-revision GP5 / MusicXML / humanized MIDI export
+  -> legacy Eclipse MIDI export
   -> corpus round-trip evaluation
   -> governed knowledge candidate and A/B gate
 ```
 
-The LLM is advisory. It may classify style or propose bounded decisions, but
-deterministic code owns pitch, rhythm, string/fret truth, policy enforcement,
-validation and export.
+Blank guitar, drum, bass, keys and standard-notation projects enter the editor
+without MIDI. The editor replaces the old linear flow incrementally; it does
+not remove the existing engines. Manual, repair, humanize and LLM changes will
+converge on one typed, validated and versioned command boundary. The LLM remains advisory:
+deterministic code owns policy, musical validation and export, and the user
+reviews a proposed change before it is applied.
 
 ## Local setup
 
@@ -89,8 +103,9 @@ npm run build
 External GP corpus evaluation is opt-in and never part of the default unit
 suite. Set `FRETPILOR_TEST_REFERENCE_ZIP` only for a local, authorized corpus.
 
-The latest verified snapshot is 568 backend tests passed, 6 opt-in tests
-skipped, 8 frontend tests passed, and a successful frontend production build.
+The latest verified snapshot is 616 backend tests passed, 6 opt-in tests
+skipped, 50 frontend tests passed, and successful backend/frontend production
+builds.
 Do not treat this number as a permanent contract; CI status and the current
 test suite are authoritative.
 

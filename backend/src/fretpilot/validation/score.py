@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 
+from fretpilot.drum.notation import notation_voice
 from fretpilot.ir.song import SongIR, ValidationIssue, ValidationLayer
 
 _LINKED_GUITAR_TECHNIQUES = frozenset({"hammer_on", "pull_off", "slide"})
@@ -44,6 +45,7 @@ def _validate_fretted_track(song: SongIR, track, issues: list[ValidationIssue]) 
     code = family
     tuning = [int(value) for value in track.instrument.get("tuning", [])]
     fret_count = int(track.instrument.get("fret_count", 24))
+    capo = int(track.instrument.get("capo", 0))
     if not tuning:
         _issue(issues, f"{code}.tuning_missing", f"{label} track has no tuning.", track_id=track.id)
         return
@@ -90,7 +92,7 @@ def _validate_fretted_track(song: SongIR, track, issues: list[ValidationIssue]) 
                 )
                 continue
             open_pitch = tuning[len(tuning) - realization.string]
-            if open_pitch + realization.fret != event.pitch:
+            if open_pitch + capo + realization.fret != event.pitch:
                 _issue(
                     issues,
                     f"{code}.pitch_mismatch",
@@ -343,6 +345,9 @@ def _validate_notation(song: SongIR, issues: list[ValidationIssue]) -> None:
 
 def _validate_drums(track, issues: list[ValidationIssue]) -> None:
     for measure in track.measures:
+        by_voice_onset: dict[int, dict[float, list]] = defaultdict(
+            lambda: defaultdict(list)
+        )
         for event in measure.events:
             if event.realization.kind != "drums":
                 _issue(
@@ -360,6 +365,49 @@ def _validate_drums(track, issues: list[ValidationIssue]) -> None:
                     track_id=track.id,
                     note_ids=[event.id],
                 )
+                continue
+            expected_voice = notation_voice(event.realization.piece)
+            if event.score.voice != expected_voice:
+                _issue(
+                    issues,
+                    "drums.voice_policy",
+                    "Hands/cymbals must use voice 1 and feet must use voice 2.",
+                    track_id=track.id,
+                    note_ids=[event.id],
+                )
+            by_voice_onset[event.score.voice][
+                round(event.score.start_beat, 8)
+            ].append(event)
+
+        for voice, groups in by_voice_onset.items():
+            ordered = sorted(groups.items())
+            for group_index, (onset, events) in enumerate(ordered):
+                durations = {round(event.score.duration_beats, 8) for event in events}
+                if len(durations) > 1:
+                    _issue(
+                        issues,
+                        "drums.chord_duration",
+                        "Simultaneous drum hits in one voice require one written duration.",
+                        track_id=track.id,
+                        note_ids=[event.id for event in events],
+                    )
+                boundary = (
+                    ordered[group_index + 1][0]
+                    if group_index + 1 < len(ordered)
+                    else measure.start_beat + measure.duration_beats
+                )
+                if any(
+                    event.score.start_beat + event.score.duration_beats
+                    > boundary + 1e-6
+                    for event in events
+                ):
+                    _issue(
+                        issues,
+                        "drums.voice_overlap",
+                        f"Drum voice {voice} overlaps its next onset or barline.",
+                        track_id=track.id,
+                        note_ids=[event.id for event in events],
+                    )
 
 
 def _validate_techniques(song: SongIR, issues: list[ValidationIssue]) -> None:

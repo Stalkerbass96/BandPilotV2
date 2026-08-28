@@ -10,6 +10,7 @@ from collections import Counter
 from math import floor
 
 from fretpilot.engine.context import PipelineContext, QuantizedNote
+from fretpilot.engine.drum_context import DrumPipelineContext
 from fretpilot.knowledge.engine import GridStep, KnowledgeEngine
 from fretpilot.midi.models import NormalizedNote
 
@@ -57,6 +58,31 @@ def _shortest_significant_duration(notes: list[NormalizedNote]) -> float | None:
     return min(significant) if significant else min(durations)
 
 
+def _shortest_significant_onset_gap(notes: list[NormalizedNote]) -> float | None:
+    """Return the shortest meaningful gap between distinct drum onsets.
+
+    Drum MIDI gates are sampler data and do not describe the rhythmic grid.
+    Onset spacing is therefore the only valid adaptive-grid signal for a
+    percussion track. Near-simultaneous flam timing below the notation floor
+    is intentionally ignored here and retained in PerformanceTiming.
+    """
+    onsets = sorted({round(note.start_beat, 6) for note in notes})
+    gaps = [
+        current - previous
+        for previous, current in zip(onsets, onsets[1:])
+        if current - previous >= _MIN_SIGNIFICANT_DURATION
+    ]
+    if not gaps:
+        return None
+    counter = Counter(round(gap, 3) for gap in gaps)
+    total = len(gaps)
+    significant = [
+        gap for gap, count in counter.items()
+        if count / total >= _MIN_SIGNIFICANT_RATIO
+    ]
+    return min(significant) if significant else min(gaps)
+
+
 def _grid_step_for_duration(min_duration: float) -> float:
     """返回能容纳 min_duration 的最粗网格步长（4分/8分/16分/32分）。
 
@@ -94,17 +120,23 @@ class QuantizeStage:
     def __init__(self, engine: KnowledgeEngine) -> None:
         self._engine = engine
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
+    def run(self, ctx: PipelineContext | DrumPipelineContext) -> PipelineContext | DrumPipelineContext:
         grid = self._engine.select_grid(ctx.style_label, ctx.midi_fidelity)
-        # 自适应：网格不能粗于音符的最短显著时值，否则吞掉真实存在的短音符。
-        min_duration = _shortest_significant_duration(ctx.track.notes)
-        if min_duration is not None:
-            required_step = _grid_step_for_duration(min_duration)
+        # Drum gates are not score durations. Use onset gaps for percussion;
+        # pitched instruments continue to use their significant note length.
+        rhythmic_unit = (
+            _shortest_significant_onset_gap(ctx.track.notes)
+            if isinstance(ctx, DrumPipelineContext)
+            else _shortest_significant_duration(ctx.track.notes)
+        )
+        if rhythmic_unit is not None:
+            required_step = _grid_step_for_duration(rhythmic_unit)
             if required_step < grid.step_beats:
                 grid = GridStep(f"adaptive_{grid.name}", required_step)
                 ctx.warnings.append(
                     f"Grid refined to {required_step} beats (shortest significant "
-                    f"duration {min_duration:.3f} beats)."
+                    f"{'onset gap' if isinstance(ctx, DrumPipelineContext) else 'duration'} "
+                    f"{rhythmic_unit:.3f} beats)."
                 )
         ctx.warnings.append(f"Selected grid: {grid.name} (step={grid.step_beats})")
 
@@ -149,5 +181,6 @@ class QuantizeStage:
 __all__ = [
     "QuantizeStage",
     "_shortest_significant_duration",
+    "_shortest_significant_onset_gap",
     "_grid_step_for_duration",
 ]

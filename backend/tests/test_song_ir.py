@@ -10,6 +10,7 @@ from fretpilot.ai.advisor import ShadowRewriteAdvisor
 from fretpilot.artifacts import file_sha256
 from fretpilot.exporters.registry import SongExporterRegistry
 from fretpilot.ir.song import TechniqueIR
+from fretpilot.ir.song_adapter import _techniques_for_event
 from fretpilot.ir.song_serde import load_song_ir, save_song_ir, song_ir_from_dict
 from fretpilot.knowledge.tunings import TuningRegistry
 from fretpilot.midi.parser import load_midi
@@ -138,6 +139,35 @@ def test_linked_technique_requires_consistent_relation(tmp_path) -> None:
     validation = validate_song(run.song)
     assert validation.status == "failed"
     assert any(issue.code == "technique.order" for issue in validation.issues)
+
+
+def test_linked_technique_projects_only_on_destination_event(tmp_path) -> None:
+    _service, run, _project_dir = _repair(tmp_path)
+    assert run.song is not None
+    events = [
+        event
+        for track in run.song.score.tracks
+        if track.family == "guitar"
+        for measure in track.measures
+        for event in measure.events
+    ]
+    source, target = events[:2]
+    technique = TechniqueIR(
+        id="tech:slide",
+        type="slide",
+        note_ids=[source.id, target.id],
+        confidence=1.0,
+        reason="test relation projection",
+    )
+    run.song.score.techniques.append(technique)
+    source.technique_ids.append(technique.id)
+    target.technique_ids.append(technique.id)
+
+    assert _techniques_for_event(run.song, source.technique_ids, source.id) == []
+    projected = _techniques_for_event(run.song, target.technique_ids, target.id)
+    assert len(projected) == 1
+    assert projected[0].type == "slide"
+    assert projected[0].source_note_id == source.id.rsplit(":", 1)[-1]
 
 
 def test_song_ir_rejects_unknown_major_schema() -> None:

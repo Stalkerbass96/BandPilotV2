@@ -189,7 +189,13 @@ def _guitar_tracks(
                 source_track_indices=(
                     [track.source_track_index] if track.source_track_index is not None else []
                 ),
-                instrument={"tuning": list(track.tuning), "fret_count": track.fret_count},
+                instrument={
+                    "tuning": list(track.tuning),
+                    "fret_count": track.fret_count,
+                    **({"capo": track.capo} if track.capo else {}),
+                    **({"program": track.program} if track.program is not None else {}),
+                    **({"mixer": dict(track.mixer)} if track.mixer else {}),
+                },
                 measures=measures,
             )
         )
@@ -270,7 +276,11 @@ def _drum_tracks(
                 source_track_indices=(
                     [track.source_track_index] if track.source_track_index is not None else []
                 ),
-                instrument={"kit": track.kit, "style": track.style},
+                instrument={
+                    "kit": track.kit,
+                    "style": track.style,
+                    **({"mixer": dict(track.mixer)} if track.mixer else {}),
+                },
                 measures=measures,
             )
         )
@@ -472,14 +482,12 @@ def _techniques_for_event(
         technique = by_id.get(technique_id)
         if technique is None:
             continue
-        source_note_id = next(
-            (
-                _local_note_id(note_id)
-                for note_id in technique.note_ids
-                if note_id != event_id
-            ),
-            None,
-        )
+        if technique.type in {"hammer_on", "pull_off", "slide"}:
+            if len(technique.note_ids) != 2 or event_id != technique.note_ids[1]:
+                continue
+            source_note_id = _local_note_id(technique.note_ids[0])
+        else:
+            source_note_id = None
         articulations.append(
             IRArticulation(
                 type=technique.type,
@@ -557,6 +565,13 @@ def song_to_legacy(
                     tuning=[int(value) for value in track.instrument.get("tuning", [])],
                     fret_count=int(track.instrument.get("fret_count", 24)),
                     measures=measures,
+                    capo=int(track.instrument.get("capo", 0)),
+                    program=(
+                        int(track.instrument["program"])
+                        if track.instrument.get("program") is not None
+                        else None
+                    ),
+                    mixer=dict(track.instrument.get("mixer", {})),
                 )
             )
         elif track.family == "drums":
@@ -606,6 +621,7 @@ def song_to_legacy(
                     kit=str(track.instrument.get("kit", "standard_5pc")),
                     style=str(track.instrument.get("style", "unknown")),
                     measures=measures_drum,
+                    mixer=dict(track.instrument.get("mixer", {})),
                 )
             )
 

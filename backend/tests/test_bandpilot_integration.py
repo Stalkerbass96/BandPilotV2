@@ -229,7 +229,7 @@ def _build_drum_ir(*, measure_count: int = 1) -> DrumProjectIR:
                     duration_beats=0.5,
                     measure_number=m,
                     beat_in_measure=float(i),
-                    voice=1,
+                    voice=2,
                     tie_in=False,
                     tie_out=False,
                 ),
@@ -610,6 +610,17 @@ class TestBandpilotExportUnit:
         assert len(song.tracks) == 1
         assert song.tracks[0].isPercussionTrack is True
         assert song.tracks[0].name == "Drums"
+        assert song.tracks[0].settings.notation is True
+        assert song.tracks[0].settings.tablature is False
+        assert song.tracks[0].channel.channel == 9
+        # GP5 stores stem direction implicitly through voice allocation; the
+        # explicit VoiceDirection hint is not round-tripped by PyGuitarPro.
+        assert not any(
+            beat.notes for beat in song.tracks[0].measures[0].voices[0].beats
+        )
+        assert any(
+            beat.notes for beat in song.tracks[0].measures[0].voices[1].beats
+        )
 
     def test_simultaneous_drum_hits_use_distinct_gp5_virtual_strings(
         self, tmp_path: Path
@@ -642,11 +653,80 @@ class TestBandpilotExportUnit:
         out = tmp_path / "drum_chord.gp5"
         result = export_bandpilot(None, drum_ir, out)
         song = gp.parse(str(out))
-        onset_notes = song.tracks[0].measures[0].voices[0].beats[0].notes
+        first_measure = song.tracks[0].measures[0]
+        hand_notes = [
+            note
+            for beat in first_measure.voices[0].beats
+            for note in beat.notes
+            if beat.start == first_measure.start
+        ]
+        foot_notes = [
+            note
+            for beat in first_measure.voices[1].beats
+            for note in beat.notes
+            if beat.start == first_measure.start
+        ]
 
         assert result.note_count == 5
-        assert {note.value for note in onset_notes} == {36, 38}
-        assert len({note.string for note in onset_notes}) == 2
+        assert {note.value for note in hand_notes} == {38}
+        assert {note.value for note in foot_notes} == {36}
+
+    def test_drum_export_preserves_exact_source_gm_pitch_and_closes_voices(
+        self, tmp_path: Path
+    ) -> None:
+        drum_ir = _build_drum_ir()
+        measure = drum_ir.tracks[0].measures[0]
+        measure.events[0].pitch = 35
+        measure.events[0].score.duration_beats = 1.0
+        measure.events.append(
+            DrumNoteEvent(
+                id="d-electric-snare",
+                source_note_index=100,
+                pitch=40,
+                piece="snare",
+                score=ScoreTiming(
+                    start_beat=0.0,
+                    duration_beats=0.5,
+                    measure_number=1,
+                    beat_in_measure=0.0,
+                ),
+                performance=PerformanceTiming(0.0, 2.8, 96),
+                location=DrumHitLocation("snare", "L", "normal"),
+            )
+        )
+        measure.events.append(
+            DrumNoteEvent(
+                id="d-crash-two",
+                source_note_index=101,
+                pitch=57,
+                piece="crash_2",
+                score=ScoreTiming(
+                    start_beat=0.5,
+                    duration_beats=3.0,
+                    measure_number=1,
+                    beat_in_measure=0.5,
+                ),
+                performance=PerformanceTiming(0.5, 2.8, 102),
+                location=DrumHitLocation("crash_2", "R", "accent"),
+            )
+        )
+
+        out = tmp_path / "drum_standard_voices.gp5"
+        result = export_bandpilot(None, drum_ir, out)
+        song = gp.parse(str(out))
+        gp_measure = song.tracks[0].measures[0]
+        pitches = {
+            note.value
+            for voice in gp_measure.voices
+            for beat in voice.beats
+            for note in beat.notes
+        }
+
+        assert {35, 40, 57} <= pitches
+        assert not result.warnings
+        expected_ticks = gp_measure.end - gp_measure.start
+        for voice in gp_measure.voices:
+            assert sum(beat.duration.time for beat in voice.beats) == expected_ticks
 
     def test_gp5_unicode_metadata_falls_back_without_breaking_score(
         self, tmp_path: Path
@@ -697,6 +777,26 @@ class TestBandpilotExportUnit:
         assert guitar_measure_2.voices[1].beats, (
             "a globally active voice 2 must remain present in padded measures"
         )
+
+    def test_combined_export_preserves_requested_track_order(
+        self, tmp_path: Path
+    ) -> None:
+        guitar_ir = _build_guitar_ir()
+        drum_ir = _build_drum_ir()
+        guitar_id = guitar_ir.tracks[0].id
+        drum_id = drum_ir.tracks[0].id
+
+        out = tmp_path / "ordered.gp5"
+        export_bandpilot(
+            guitar_ir,
+            drum_ir,
+            out,
+            track_order=[drum_id, guitar_id],
+        )
+
+        song = gp.parse(str(out))
+        assert [track.name for track in song.tracks] == ["Drums", "Guitar"]
+        assert [track.number for track in song.tracks] == [1, 2]
 
     def test_load_merged_irs_rejects_missing_keys(self, tmp_path: Path) -> None:
         bad = tmp_path / "bad.json"

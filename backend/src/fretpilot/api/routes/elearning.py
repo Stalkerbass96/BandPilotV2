@@ -446,6 +446,12 @@ async def learn_drum(
             "right_hand_rate": s.right_hand_rate,
             "hand_switch_pattern": s.hand_switch_pattern,
             "top_pieces": dict(list(s.piece_distribution.items())[:6]),
+            "quarter_or_shorter_rate": s.quarter_or_shorter_rate,
+            "voice_two_rate": s.voice_two_rate,
+            "foot_voice_two_rate": s.foot_voice_two_rate,
+            "top_written_durations": dict(
+                list(s.duration_distribution.items())[:6]
+            ),
         }
         for s in stats.values()
     ]

@@ -16,6 +16,7 @@ import ImportPage from "../pages/ImportPage";
 import LearningPage from "../pages/LearningPage";
 import WorkbenchPage from "../pages/WorkbenchPage";
 import ExportPage from "../pages/ExportPage";
+import EditorPage from "../pages/EditorPage";
 import Layout from "../components/Layout";
 import { useAuthStore } from "../store/auth";
 
@@ -27,7 +28,13 @@ const pageVariants = {
 
 const pageTransition = { duration: 0.2, ease: "easeOut" };
 
-function PageWrapper({ children }: { children: JSX.Element }): JSX.Element {
+function PageWrapper({
+  children,
+  fillHeight = false,
+}: {
+  children: JSX.Element;
+  fillHeight?: boolean;
+}): JSX.Element {
   return (
     <motion.div
       variants={pageVariants}
@@ -35,6 +42,7 @@ function PageWrapper({ children }: { children: JSX.Element }): JSX.Element {
       animate="animate"
       exit="exit"
       transition={pageTransition}
+      style={{ minHeight: "100%", height: fillHeight ? "100%" : undefined }}
     >
       {children}
     </motion.div>
@@ -117,6 +125,16 @@ export function AnimatedRoutes(): JSX.Element {
             <ProtectedRoute>
               <PageWrapper>
                 <WorkbenchPage />
+              </PageWrapper>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/projects/:id/editor"
+          element={
+            <ProtectedRoute>
+              <PageWrapper fillHeight>
+                <EditorPage />
               </PageWrapper>
             </ProtectedRoute>
           }

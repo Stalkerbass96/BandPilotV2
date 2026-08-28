@@ -1,29 +1,7 @@
-/**
- * Import page — v3 premium dark-first design.
- *
- *  - Refined hero with gradient mesh + pipeline stage pills
- *  - Upload zone with amber accent border
- *  - Project cards: title, filename, status/style/track badges
- *  - Stagger animation, hover lift + brand glow
- */
-
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  CircularProgress,
-  Typography,
-} from "@mui/material";
-import {
-  ArrowForwardIcon,
-  MusicNoteIcon,
-  MusicNoteIcon as GuitarIcon,
-  RefreshIcon,
-} from "../icons";
-import { motion } from "framer-motion";
+import { Alert, Box, Button, Chip, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, TextField, Tooltip, Typography } from "@mui/material";
+import { ArrowForwardIcon, CheckCircleIcon, MusicNoteIcon, RefreshIcon } from "../icons";
 import UploadZone from "../components/UploadZone";
 import { ProjectListSkeleton } from "../components/Skeletons";
 import { projectsApi } from "../api/client";
@@ -31,401 +9,172 @@ import type { ProjectItem } from "../api/types";
 import { palette } from "../styles/tokens";
 import { apiErrorMessage } from "../utils/apiError";
 
-const STAGE_PILLS = [
-  "Analyze Tracks",
-  "Classify Instruments",
-  "Repair Performance",
-  "Assign Fingering",
-  "Infer Articulation",
-  "Validate SongIR",
-  "Export",
-];
+function projectState(status: string): { label: string; color: string; action: string } {
+  if (status === "repaired") return { label: "Ready", color: palette.success, action: "Open score" };
+  if (status === "partial") return { label: "Review", color: palette.warning, action: "Review" };
+  if (status === "processing") return { label: "Working", color: palette.info, action: "View progress" };
+  return { label: "Draft", color: palette.textTertiary, action: "Continue" };
+}
+
+function instrumentLabel(family: string): string {
+  if (family === "mixed") return "Full band";
+  if (family === "guitar") return "Guitar";
+  if (family === "drums") return "Drums";
+  if (family === "keys") return "Keys";
+  if (family === "bass") return "Bass";
+  return "MIDI";
+}
+
+function projectRoute(project: ProjectItem): string {
+  return !project.source_filename || project.status === "repaired" || project.status === "partial"
+    ? `/projects/${project.id}/editor`
+    : `/projects/${project.id}`;
+}
 
 export default function ImportPage(): JSX.Element {
   const navigate = useNavigate();
   const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [blankOpen, setBlankOpen] = useState(false);
+  const [creatingBlank, setCreatingBlank] = useState(false);
+  const [blankTitle, setBlankTitle] = useState("Untitled score");
+  const [blankFamily, setBlankFamily] = useState<"guitar" | "drums" | "bass" | "keys" | "generic">("guitar");
+  const [blankBpm, setBlankBpm] = useState(120);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    void loadProjects();
-  }, []);
+  useEffect(() => { void loadProjects(); }, []);
 
   async function loadProjects(): Promise<void> {
     setLoading(true);
-    try {
-      const data = await projectsApi.list();
-      setProjects(data.items);
-    } catch (err: unknown) {
-      setError(apiErrorMessage(err, "Failed to load projects."));
-    } finally {
-      setLoading(false);
-    }
+    try { setProjects((await projectsApi.list()).items); }
+    catch (err: unknown) { setError(apiErrorMessage(err, "We couldn’t load your projects.")); }
+    finally { setLoading(false); }
   }
 
-  const handleFileSelected = useCallback(
-    async (file: File): Promise<void> => {
-      setUploading(true);
-      setError(null);
-      try {
-        const project = await projectsApi.create(
-          file,
-          file.name.replace(/\.[^.]+$/, ""),
-        );
-        navigate(`/projects/${project.id}`);
-      } catch (err: unknown) {
-        setError(apiErrorMessage(err, "MIDI upload failed."));
-      } finally {
-        setUploading(false);
-      }
-    },
-    [navigate],
-  );
+  const handleFileSelected = useCallback(async (file: File): Promise<void> => {
+    setUploading(true); setError(null);
+    try {
+      const project = await projectsApi.create(file, file.name.replace(/\.[^.]+$/, ""));
+      navigate(projectRoute(project));
+    } catch (err: unknown) { setError(apiErrorMessage(err, "We couldn’t import this MIDI file.")); }
+    finally { setUploading(false); }
+  }, [navigate]);
 
-  const statusColor = (status: string): string => {
-    if (status === "repaired") return palette.success;
-    if (status === "partial") return palette.warning;
-    if (status === "processing") return palette.warning;
-    return palette.textTertiary;
-  };
+  async function createBlankScore(): Promise<void> {
+    if (!blankTitle.trim() || blankBpm < 20 || blankBpm > 400) return;
+    setCreatingBlank(true); setError(null);
+    try {
+      const project = await projectsApi.createBlank({
+        title: blankTitle.trim(),
+        instrument_family: blankFamily,
+        bpm: blankBpm,
+        numerator: 4,
+        denominator: 4,
+      });
+      navigate(`/projects/${project.id}/editor`);
+    } catch (err: unknown) {
+      setError(apiErrorMessage(err, "We couldn’t create this blank score."));
+      setBlankOpen(false);
+    } finally { setCreatingBlank(false); }
+  }
 
   return (
-    <Box className="flex flex-col gap-8">
-      {/* ── Hero ── */}
-      <Box
-        className="rounded-2xl overflow-hidden relative"
-        sx={{
-          background: `linear-gradient(135deg, ${palette.elevated} 0%, ${palette.surface} 50%, ${palette.canvas} 100%)`,
-          border: `1px solid ${palette.borderDefault}`,
-        }}
-      >
-        {/* Glow accent */}
-        <Box
-          sx={{
-            position: "absolute",
-            top: -60,
-            right: -60,
-            width: 200,
-            height: 200,
-            borderRadius: "50%",
-            background: `radial-gradient(circle, ${palette.brandPrimary}15 0%, transparent 70%)`,
-            pointerEvents: "none",
-          }}
-        />
-        <Box className="px-6 py-8 sm:px-10 sm:py-12 relative">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-          >
-            <Chip
-              size="small"
-              label="MIDI → Tablature"
-              sx={{
-                backgroundColor: `${palette.brandPrimary}15`,
-                color: palette.brandPrimary,
-                fontWeight: 600,
-                border: "none",
-                mb: 3,
-                fontSize: 12,
-              }}
-            />
-            <Typography
-              variant="h3"
-              fontWeight={800}
-              sx={{
-                color: palette.textPrimary,
-                mb: 2,
-                letterSpacing: "-0.02em",
-                lineHeight: 1.15,
-              }}
-            >
-              Drop a MIDI file.
-              <br />
-              <span style={{ color: palette.brandPrimary }}>
-                Get a playable band score.
-              </span>
-            </Typography>
-            <Typography
-              variant="body1"
-              sx={{
-                color: palette.textSecondary,
-                maxWidth: 520,
-                lineHeight: 1.6,
-                fontSize: 15,
-              }}
-            >
-              BandPilot classifies guitar, drums, bass, keys, and other tracks,
-              routes each one through its dedicated repair engine, then validates
-              a single SongIR for professional notation and performance exports.
-            </Typography>
-            {/* Pipeline pills */}
-            <Box className="flex flex-wrap gap-1.5 mt-5">
-              {STAGE_PILLS.map((stage, i) => (
-                <motion.div
-                  key={stage}
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.2, delay: 0.3 + i * 0.04 }}
-                >
-                  <Chip
-                    size="small"
-                    label={stage}
-                    sx={{
-                      backgroundColor: palette.subtle,
-                      color: palette.textTertiary,
-                      border: `1px solid ${palette.borderDefault}`,
-                      fontSize: 11,
-                      fontWeight: 500,
-                    }}
-                  />
-                </motion.div>
+    <Box className="flex flex-col gap-10">
+      <Box className="flex flex-col sm:flex-row sm:items-end justify-between gap-5">
+        <Box>
+          <Typography className="bp-eyebrow">MIDI to playable score</Typography>
+          <Typography component="h1" sx={{ color: palette.textPrimary, fontSize: { xs: 34, md: 46 }, fontWeight: 850, letterSpacing: "-.045em", lineHeight: 1.06, mt: 1.5, maxWidth: 760 }}>
+            Turn a MIDI into a score<br />you can actually play.
+          </Typography>
+          <Typography sx={{ color: palette.textSecondary, fontSize: 15, lineHeight: 1.7, mt: 2, maxWidth: 620 }}>
+            BandPilot finds the instruments, creates practical fingerings and articulations, and gives you a professional score to review and export.
+          </Typography>
+        </Box>
+        <Button onClick={() => setBlankOpen(true)} variant="outlined" startIcon={<MusicNoteIcon />} sx={{ flexShrink: 0 }}>Blank score</Button>
+      </Box>
+
+      {error && <Alert severity="error" onClose={() => setError(null)}>{error}</Alert>}
+
+      <Dialog open={blankOpen} onClose={() => { if (!creatingBlank) setBlankOpen(false); }} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontWeight: 820 }}>Create a blank score</DialogTitle>
+        <DialogContent className="flex flex-col gap-4" sx={{ pt: "12px !important" }}>
+          <TextField autoFocus label="Score title" value={blankTitle} onChange={(event) => setBlankTitle(event.target.value)} fullWidth />
+          <TextField select label="Instrument" value={blankFamily} onChange={(event) => setBlankFamily(event.target.value as typeof blankFamily)} fullWidth>
+            <MenuItem value="guitar">Guitar</MenuItem><MenuItem value="bass">Bass</MenuItem><MenuItem value="drums">Drums</MenuItem><MenuItem value="keys">Keys</MenuItem><MenuItem value="generic">Standard notation</MenuItem>
+          </TextField>
+          <TextField label="Tempo" type="number" value={blankBpm} onChange={(event) => setBlankBpm(Number(event.target.value))} inputProps={{ min: 20, max: 400 }} helperText="4/4 · you can change meter in a later editor slice" fullWidth />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2.5 }}><Button disabled={creatingBlank} onClick={() => setBlankOpen(false)}>Cancel</Button><Button disabled={creatingBlank || !blankTitle.trim() || blankBpm < 20 || blankBpm > 400} onClick={() => void createBlankScore()} variant="contained">{creatingBlank ? "Creating…" : "Create"}</Button></DialogActions>
+      </Dialog>
+
+      <Box className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+        <Box className="lg:col-span-2">
+          {uploading ? (
+            <Box className="bp-card flex flex-col items-center justify-center gap-3 text-center" sx={{ minHeight: 280 }}>
+              <CircularProgress size={30} />
+              <Typography sx={{ color: palette.textPrimary, fontWeight: 800 }}>Reading your MIDI…</Typography>
+              <Typography sx={{ color: palette.textSecondary, fontSize: 13 }}>This usually takes only a moment.</Typography>
+            </Box>
+          ) : <UploadZone onFileSelected={handleFileSelected} />}
+        </Box>
+        <Box className="bp-card p-6 sm:p-7 flex flex-col justify-between">
+          <Box>
+            <Typography sx={{ color: palette.textPrimary, fontWeight: 800, fontSize: 15 }}>What happens next</Typography>
+            <Box className="flex flex-col gap-5 mt-6">
+              {[
+                ["1", "Check the band", "Confirm guitar, drums, bass, keys and other parts."],
+                ["2", "Choose your intent", "Keep the original or favor easier, more natural playing."],
+                ["3", "Review and export", "Preview the score, then download Guitar Pro, MusicXML or MIDI."],
+              ].map(([number, title, body]) => (
+                <Box key={number} className="flex gap-3">
+                  <Box className="flex-shrink-0 flex items-center justify-center" sx={{ width: 26, height: 26, borderRadius: "50%", background: palette.subtle, color: palette.brandPrimary, fontSize: 11, fontWeight: 800 }}>{number}</Box>
+                  <Box><Typography sx={{ color: palette.textPrimary, fontSize: 13, fontWeight: 750 }}>{title}</Typography><Typography sx={{ color: palette.textSecondary, fontSize: 11.5, lineHeight: 1.55, mt: .25 }}>{body}</Typography></Box>
+                </Box>
               ))}
             </Box>
-          </motion.div>
-        </Box>
-      </Box>
-
-      {error && (
-        <Alert severity="error" sx={{ borderRadius: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      {/* ── Upload ── */}
-      {uploading ? (
-        <Box
-          className="flex items-center gap-3 py-10 rounded-xl"
-          sx={{
-            backgroundColor: palette.elevated,
-            border: `1px solid ${palette.borderDefault}`,
-            justifyContent: "center",
-          }}
-        >
-          <CircularProgress size={24} sx={{ color: palette.brandPrimary }} />
-          <Typography sx={{ color: palette.textSecondary, fontSize: 14 }}>
-            Uploading and analyzing MIDI…
-          </Typography>
-        </Box>
-      ) : (
-        <UploadZone onFileSelected={handleFileSelected} />
-      )}
-
-      {/* ── Projects ── */}
-      <Box className="flex items-center justify-between">
-        <Box className="flex items-center gap-2">
-          <Typography
-            variant="h6"
-            fontWeight={700}
-            sx={{ color: palette.textPrimary, letterSpacing: "-0.01em" }}
-          >
-            Projects
-          </Typography>
-          {!loading && projects.length > 0 && (
-            <Chip
-              size="small"
-              label={projects.length}
-              sx={{
-                backgroundColor: palette.subtle,
-                color: palette.textTertiary,
-                border: "none",
-                fontWeight: 600,
-                minWidth: 24,
-              }}
-            />
-          )}
-        </Box>
-        <Button
-          startIcon={<RefreshIcon />}
-          variant="text"
-          onClick={loadProjects}
-          sx={{
-            color: palette.textSecondary,
-            textTransform: "none",
-            fontSize: 13,
-            "&:hover": { color: palette.brandPrimary },
-          }}
-        >
-          Refresh
-        </Button>
-      </Box>
-
-      {loading ? (
-        <ProjectListSkeleton />
-      ) : projects.length === 0 ? (
-        <Box
-          className="flex flex-col items-center justify-center py-16 gap-4 rounded-xl"
-          sx={{
-            backgroundColor: palette.elevated,
-            border: `1px dashed ${palette.borderDefault}`,
-          }}
-        >
-          <Box
-            sx={{
-              width: 56,
-              height: 56,
-              borderRadius: 3,
-              backgroundColor: palette.subtle,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <MusicNoteIcon sx={{ fontSize: 28, color: palette.textTertiary }} />
           </Box>
-          <Typography sx={{ color: palette.textSecondary, fontSize: 14 }}>
-            No projects yet — upload a MIDI file to get started.
-          </Typography>
+          <Box className="flex items-center gap-2 mt-6 pt-5" sx={{ borderTop: `1px solid ${palette.borderDefault}` }}>
+            <CheckCircleIcon sx={{ color: palette.success, fontSize: 17 }} />
+            <Typography sx={{ color: palette.textTertiary, fontSize: 11 }}>Your original MIDI is always preserved.</Typography>
+          </Box>
         </Box>
-      ) : (
-        <Box className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map((project, index) => (
-            <motion.div
-              key={project.id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.25, delay: index * 0.05 }}
-              whileHover={{ y: -4 }}
-            >
-              <Box
-                onClick={() => navigate(`/projects/${project.id}`)}
-                className="cursor-pointer rounded-xl p-5 transition-all duration-200"
-                sx={{
-                  backgroundColor: palette.elevated,
-                  border: `1px solid ${palette.borderDefault}`,
-                  "&:hover": {
-                    borderColor: `${palette.brandPrimary}60`,
-                    boxShadow: `0 8px 24px rgba(232, 162, 75, 0.08)`,
-                  },
-                }}
-              >
-                {/* Top row: icon + title + arrow */}
-                <Box className="flex items-start gap-3">
-                  <Box
-                    sx={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 2,
-                      backgroundColor: palette.subtle,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexShrink: 0,
-                    }}
-                  >
-                    <GuitarIcon sx={{ fontSize: 18, color: palette.brandPrimary }} />
-                  </Box>
-                  <Box className="flex-1 min-w-0">
-                    <Typography
-                      fontWeight={600}
-                      sx={{
-                        color: palette.textPrimary,
-                        fontSize: 15,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {project.title}
-                    </Typography>
-                    <Typography
-                      sx={{
-                        color: palette.textTertiary,
-                        fontSize: 12,
-                        mt: 0.3,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {project.source_filename}
-                    </Typography>
-                  </Box>
-                  <ArrowForwardIcon
-                    sx={{
-                      fontSize: 18,
-                      color: palette.textTertiary,
-                      flexShrink: 0,
-                      transition: "color 0.2s",
-                      "&:hover": { color: palette.brandPrimary },
-                    }}
-                  />
-                </Box>
+      </Box>
 
-                {/* Bottom row: badges */}
-                <Box className="flex items-center gap-1.5 mt-4 flex-wrap">
-                  {/* Instrument family badge */}
-                  {project.instrument_family === "mixed" && (
-                    <Chip
-                      size="small"
-                      label="Mixed band"
-                      sx={{
-                        backgroundColor: `${palette.brandPrimary}15`,
-                        color: palette.brandPrimary,
-                        fontWeight: 600,
-                        border: "none",
-                        fontSize: 11,
-                      }}
-                    />
-                  )}
-                  {project.instrument_family && project.instrument_family !== "mixed" && (
-                    <Chip
-                      size="small"
-                      label={project.instrument_family === "guitar" ? "🎸 guitar" : project.instrument_family === "drums" ? "🥁 drums" : project.instrument_family}
-                      sx={{
-                        backgroundColor: palette.subtle,
-                        color: palette.textSecondary,
-                        fontWeight: 500,
-                        border: "none",
-                        fontSize: 11,
-                      }}
-                    />
-                  )}
-                  <Chip
-                    size="small"
-                    label={project.status}
-                    sx={{
-                      backgroundColor: `${statusColor(project.status)}15`,
-                      color: statusColor(project.status),
-                      fontWeight: 500,
-                      border: "none",
-                      fontSize: 11,
-                      textTransform: "capitalize",
-                    }}
-                  />
-                  {project.style_label !== "unknown" && (
-                    <Chip
-                      size="small"
-                      label={project.style_label}
-                      sx={{
-                        backgroundColor: `${palette.brandPrimary}12`,
-                        color: palette.brandPrimary,
-                        fontWeight: 500,
-                        border: "none",
-                        fontSize: 11,
-                      }}
-                    />
-                  )}
-                  {project.degraded_mode && (
-                    <Chip
-                      size="small"
-                      label="degraded"
-                      sx={{
-                        backgroundColor: `${palette.warning}15`,
-                        color: palette.warning,
-                        fontWeight: 500,
-                        border: "none",
-                        fontSize: 11,
-                      }}
-                    />
-                  )}
-                </Box>
-              </Box>
-            </motion.div>
-          ))}
+      <Box>
+        <Box className="flex items-end justify-between mb-4">
+          <Box><Typography className="bp-eyebrow">Workspace</Typography><Typography sx={{ color: palette.textPrimary, fontSize: 22, fontWeight: 820, letterSpacing: "-.025em", mt: .75 }}>Your music</Typography></Box>
+          <Tooltip title="Refresh projects"><IconButton onClick={() => void loadProjects()} size="small" aria-label="Refresh projects"><RefreshIcon fontSize="small" /></IconButton></Tooltip>
         </Box>
-      )}
+
+        {loading ? <ProjectListSkeleton /> : projects.length === 0 ? (
+          <Box className="bp-card flex flex-col items-center text-center px-6 py-12">
+            <MusicNoteIcon sx={{ color: palette.textTertiary, fontSize: 28 }} />
+            <Typography sx={{ color: palette.textPrimary, fontWeight: 750, mt: 2 }}>Your first score will appear here</Typography>
+            <Typography sx={{ color: palette.textSecondary, fontSize: 12.5, mt: .75 }}>Choose a MIDI above to get started.</Typography>
+          </Box>
+        ) : (
+          <Box className="bp-card overflow-hidden">
+            {projects.map((project, index) => {
+              const state = projectState(project.status);
+              return (
+                <Box key={project.id} role="button" tabIndex={0} onClick={() => navigate(projectRoute(project))}
+                  onKeyDown={(event) => { if (event.key === "Enter") navigate(projectRoute(project)); }}
+                  className="flex items-center gap-4 px-5 py-4 cursor-pointer"
+                  sx={{ borderTop: index ? `1px solid ${palette.borderDefault}` : "none", transition: "background .15s ease", "&:hover": { background: palette.surface } }}>
+                  <Box className="flex items-center justify-center flex-shrink-0" sx={{ width: 42, height: 42, borderRadius: 2.5, background: palette.subtle, color: palette.brandPrimary }}><MusicNoteIcon sx={{ fontSize: 20 }} /></Box>
+                  <Box className="flex-1 min-w-0">
+                    <Typography className="truncate" sx={{ color: palette.textPrimary, fontSize: 14, fontWeight: 750 }}>{project.title}</Typography>
+                    <Typography className="truncate" sx={{ color: palette.textTertiary, fontSize: 11.5, mt: .4 }}>{instrumentLabel(project.instrument_family)}{project.style_label !== "unknown" ? ` · ${project.style_label}` : ""} · {project.source_filename}</Typography>
+                  </Box>
+                  <Chip size="small" label={state.label} sx={{ background: `${state.color}14`, color: state.color, fontWeight: 750, fontSize: 11 }} />
+                  <Button endIcon={<ArrowForwardIcon />} size="small" sx={{ color: palette.textPrimary, display: { xs: "none", sm: "inline-flex" } }}>{state.action}</Button>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+      </Box>
     </Box>
   );
 }

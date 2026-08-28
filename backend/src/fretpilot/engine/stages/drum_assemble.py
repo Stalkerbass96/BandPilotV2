@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 
+from fretpilot.drum.notation import notation_voice, written_duration_beats
 from fretpilot.engine.drum_context import DrumPipelineContext, NotatedNote
 from fretpilot.ir.drum_models import (
     DrumHitLocation,
@@ -52,6 +53,9 @@ def _build_time_signatures(ctx: DrumPipelineContext) -> list[IRTimeSignatureEven
 def _build_drum_note_event(
     note: NotatedNote,
     index: int,
+    *,
+    voice: int,
+    duration_beats: float,
 ) -> DrumNoteEvent:
     """Build a DrumNoteEvent from a NotatedNote.
 
@@ -67,9 +71,10 @@ def _build_drum_note_event(
 
     score = ScoreTiming(
         start_beat=mapped.start_beat,
-        duration_beats=mapped.duration_beats,
+        duration_beats=duration_beats,
         measure_number=mapped.measure_number,
         beat_in_measure=mapped.beat_in_measure,
+        voice=voice,
     )
     performance = PerformanceTiming(
         source_start_beat=mapped.original_start_beat,
@@ -122,9 +127,42 @@ def _build_measures(
 
     for boundary in ctx.measures:
         measure_notes = notated_by_measure.get(boundary.number, [])
+        measure_end = boundary.end_beat
+        source_durations: dict[tuple[int, float], list[float]] = defaultdict(list)
+        for note in measure_notes:
+            mapped = note.sticked.velocity.pattern.mapped
+            source_durations[
+                (notation_voice(mapped.piece), mapped.start_beat)
+            ].append(mapped.duration_beats)
+        durations: dict[tuple[int, float], float] = {}
+        voices = {voice for voice, _onset in source_durations}
+        for voice in voices:
+            onsets = sorted(
+                onset for candidate_voice, onset in source_durations
+                if candidate_voice == voice
+            )
+            for onset_index, onset in enumerate(onsets):
+                next_onset = (
+                    onsets[onset_index + 1]
+                    if onset_index + 1 < len(onsets)
+                    else None
+                )
+                durations[(voice, onset)] = written_duration_beats(
+                    onset,
+                    next_onset,
+                    measure_end,
+                    preferred_duration=min(source_durations[(voice, onset)]),
+                )
         events = []
         for note in measure_notes:
-            event = _build_drum_note_event(note, event_index)
+            mapped = note.sticked.velocity.pattern.mapped
+            voice = notation_voice(mapped.piece)
+            event = _build_drum_note_event(
+                note,
+                event_index,
+                voice=voice,
+                duration_beats=durations[(voice, mapped.start_beat)],
+            )
             events.append(event)
             event_index += 1
 

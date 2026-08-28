@@ -125,6 +125,7 @@ class DrumTrackIR:
     kit: str
     style: str = "unknown"
     measures: list[DrumMeasure] = field(default_factory=list)
+    mixer: dict[str, object] = field(default_factory=dict)
 
 
 # ─── Project-level IR (top-level container) ───

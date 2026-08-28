@@ -4,6 +4,20 @@ The documentation set has one current source for each kind of decision. This
 index defines authority; it prevents historical PRDs and completion snapshots
 from becoming accidental requirements.
 
+## Consolidated status (2026-08-28)
+
+| Question | Current answer | Owner |
+|---|---|---|
+| What is the product? | A desktop-first, Guitar Pro-class browser score editor with MIDI repair, reversible musical intelligence, collaboration and selection-based AI proposals. | [`PRODUCT.md`](./PRODUCT.md) |
+| What is the source of musical truth? | Versioned `ScoreDocument` 3.0 snapshots and typed, validated transactions; renderer objects, SongIR, GP5, MusicXML and LLM output are derived. | [`ARCHITECTURE.md`](./ARCHITECTURE.md) |
+| What works now? | MIDI/blank-score entry, five-family score preparation, single-user AlphaTab editing, same-track copy/cut/paste, undo/redo, playback practice controls, page/horizontal layout and revision-pinned exports. | [`ROADMAP.md`](./ROADMAP.md) |
+| What is next? | Finish E1 release-latency qualification and professional notation depth, then move repair/humanization into reviewable editor proposals (E2). | [`ROADMAP.md`](./ROADMAP.md) |
+| How do changes land? | Contract-first, one typed write boundary, focused vertical slices, real boundary tests, updated owner docs and a complete definition-of-done review. | [`DEVELOPMENT.md`](./DEVELOPMENT.md) |
+
+This table is the short operational summary. Detailed behavior, architecture,
+acceptance criteria and evidence remain in the linked owner documents; do not
+copy this status into another planning file.
+
 ## Active documents
 
 | Document | Authority |
@@ -42,6 +56,13 @@ file lists, test counts, schedules and open questions are not current.
 - Priority, baseline or milestone acceptance changes update `ROADMAP.md`.
 - Setup and public capability changes update the root `README.md`.
 - Archived documents are immutable except to repair an archive link or add a
-  factual archival note.
+factual archival note.
+
+## Technical evidence
+
+Files under `evidence/` record repeatable spike or release measurements. They
+may support an active decision but do not own product scope or architecture.
+Current evidence includes the
+[`AlphaTab editor spike`](./evidence/alphatab-editor-spike.md).
 - Do not include API keys, private corpus paths, user-specific absolute paths or
   volatile generated artifact names in documentation.

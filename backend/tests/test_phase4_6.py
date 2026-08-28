@@ -170,3 +170,45 @@ def test_musicxml_gp5_and_humanized_midi_are_real_parseable_exports(tmp_path) ->
     ]
     assert len(piano_notes) == 8
     assert {note.string for note in piano_notes} <= set(range(1, 8))
+
+
+def test_musicxml_writes_tuplet_tie_and_explicit_dynamic_semantics(tmp_path) -> None:
+    song = _song()
+    generic = next(track for track in song.score.tracks if track.family == "generic")
+    generic_event = generic.measures[0].events[0]
+    generic_event.score.duration_beats = 2 / 3
+    performance = next(
+        value for value in song.performance.events if value.note_id == generic_event.id
+    )
+    performance.controls.append({"type": "dynamic", "value": "f"})
+    performance.velocity = 96
+
+    bass = next(track for track in song.score.tracks if track.family == "bass")
+    source, target = bass.measures[0].events[:2]
+    target.pitch = source.pitch
+    target.realization.string = source.realization.string
+    target.realization.fret = source.realization.fret
+    source.score.tie_out = True
+    target.score.tie_in = True
+
+    destination = tmp_path / "notation-semantics.musicxml"
+    SongExporterRegistry.default().export("musicxml", song, destination)
+    xml = ET.parse(destination).getroot()
+
+    assert any(value.text == "3" for value in xml.findall(".//actual-notes"))
+    assert xml.findall(".//direction-type/dynamics/f")
+    assert xml.findall(".//tie[@type='start']")
+    assert xml.findall(".//tie[@type='stop']")
+    assert xml.findall(".//tied[@type='start']")
+    assert xml.findall(".//tied[@type='stop']")
+
+    midi_path = tmp_path / "notation-semantics.mid"
+    midi_result = SongExporterRegistry.default().export(
+        "humanized_midi", song, midi_path
+    )
+    score_event_count = sum(
+        len(measure.events)
+        for track in song.score.tracks
+        for measure in track.measures
+    )
+    assert midi_result.note_count == score_event_count - 1

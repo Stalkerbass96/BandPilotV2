@@ -8,19 +8,26 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from fretpilot.api.deps import get_current_user
 from fretpilot.config import get_settings
-from fretpilot.db.models import ExportRecord, Project, User
+from fretpilot.db.models import ExportRecord, Project, ScoreDocumentRecord, User
 from fretpilot.db.session import get_db
 from fretpilot.exporters.ample_midi.profile import load_profile
 from fretpilot.exporters.ample_midi.renderer import AmpleMidiExporter
 from fretpilot.exporters.gp5 import GP5Exporter, export_bandpilot
 from fretpilot.exporters.registry import SongExporterRegistry
+from fretpilot.ir.score_document_adapter import score_document_to_song_ir
 from fretpilot.ir.serde import load_ir, load_merged_irs
+from fretpilot.ir.song import SongIR
 from fretpilot.ir.song_serde import load_song_ir
+from fretpilot.services.score_documents import (
+    ScoreDocumentIntegrityError,
+    ScoreDocumentNotFoundError,
+    load_score_document_revision,
+)
 from fretpilot.validation import ScoreValidationError
 
 logger = logging.getLogger("fretpilot.api.exports")
@@ -29,12 +36,15 @@ router = APIRouter()
 
 class ExportRequest(BaseModel):
     format: str
+    revision: int | None = Field(default=None, ge=0)
 
 
 class ExportResponse(BaseModel):
     download_url: str
     format_id: str
     note_count: int
+    revision_id: str | None = None
+    revision_hash: str | None = None
 
 
 def _get_user_project(db: Session, user: User, project_id: int) -> Project:
@@ -93,6 +103,46 @@ def _export_ample(project_dir: Path, out_dir: Path) -> tuple[Path, int, int]:
     return out_path, result.note_count, result.measure_count
 
 
+def _export_song(
+    song: SongIR,
+    requested_format: str,
+    exports_dir: Path,
+) -> tuple[Path, int, int]:
+    aliases = {"ample_midi": "ample_eclipse_midi"}
+    canonical_format = aliases.get(requested_format, requested_format)
+    file_shapes = {
+        "gp5": ("score", ".gp5"),
+        "musicxml": ("score", ".musicxml"),
+        "humanized_midi": ("humanized-band", ".mid"),
+        "ample_eclipse_midi": ("ample-eclipse", ".mid"),
+        "humanized_ample_eclipse_midi": ("humanized-ample-eclipse", ".mid"),
+    }
+    file_shape = file_shapes.get(canonical_format)
+    if file_shape is None:
+        raise HTTPException(400, f"Unsupported format: {requested_format}")
+    stem, suffix = file_shape
+    out_path = exports_dir / f"{stem}-{uuid4().hex[:12]}{suffix}"
+    try:
+        result = SongExporterRegistry.default().export(canonical_format, song, out_path)
+    except ScoreValidationError as exc:
+        raise HTTPException(
+            422,
+            {
+                "message": "Score failed professional playability validation",
+                "issues": [
+                    {
+                        "code": issue.code,
+                        "message": issue.message,
+                        "track_id": issue.track_id,
+                        "note_ids": issue.note_ids,
+                    }
+                    for issue in exc.issues
+                ],
+            },
+        ) from exc
+    return out_path, result.note_count, result.measure_count
+
+
 @router.post("/{project_id}/export", response_model=dict)
 def export_project(
     project_id: int,
@@ -103,71 +153,66 @@ def export_project(
     """Export the repaired project to the requested format."""
     project = _get_user_project(db, user, project_id)
     project_dir = _project_dir(user, project_id)
-    song_path = project_dir / "song_ir.json"
-    ir_path = project_dir / "ir.json"
-    merged_path = project_dir / "ir_merged.json"
-    if not song_path.exists() and not ir_path.exists() and not merged_path.exists():
-        raise HTTPException(400, "No repair result found. Run repair first.")
-
     exports_dir = project_dir / "exports"
     exports_dir.mkdir(parents=True, exist_ok=True)
 
-    if song_path.exists():
-        aliases = {"ample_midi": "ample_eclipse_midi"}
-        canonical_format = aliases.get(req.format, req.format)
-        file_shapes = {
-            "gp5": ("score", ".gp5"),
-            "musicxml": ("score", ".musicxml"),
-            "humanized_midi": ("humanized-band", ".mid"),
-            "ample_eclipse_midi": ("ample-eclipse", ".mid"),
-            "humanized_ample_eclipse_midi": ("humanized-ample-eclipse", ".mid"),
-        }
-        file_shape = file_shapes.get(canonical_format)
-        if file_shape is None:
-            raise HTTPException(400, f"Unsupported format: {req.format}")
-        stem, suffix = file_shape
-        filename = f"{stem}-{uuid4().hex[:12]}{suffix}"
-        out_path = exports_dir / filename
+    revision_id: str | None = None
+    revision_hash: str | None = None
+    if req.revision is not None:
+        record = db.query(ScoreDocumentRecord).filter(
+            ScoreDocumentRecord.project_id == project.id
+        ).first()
+        if record is None:
+            raise HTTPException(404, "Project has no ScoreDocument")
         try:
-            result = SongExporterRegistry.default().export(
-                canonical_format, load_song_ir(song_path), out_path
-            )
-        except ScoreValidationError as exc:
-            raise HTTPException(
-                422,
-                {
-                    "message": "Score failed professional playability validation",
-                    "issues": [
-                        {
-                            "code": issue.code,
-                            "message": issue.message,
-                            "track_id": issue.track_id,
-                            "note_ids": issue.note_ids,
-                        }
-                        for issue in exc.issues
-                    ],
-                },
-            ) from exc
-        note_count, measure_count = result.note_count, result.measure_count
+            stored = load_score_document_revision(db, record.id, revision=req.revision)
+        except ScoreDocumentNotFoundError as exc:
+            raise HTTPException(404, str(exc)) from exc
+        except ScoreDocumentIntegrityError as exc:
+            raise HTTPException(500, str(exc)) from exc
+        out_path, note_count, measure_count = _export_song(
+            score_document_to_song_ir(stored.document), req.format, exports_dir
+        )
+        revision_id = stored.revision_id
+        revision_hash = stored.content_hash
     else:
-        legacy_exporters = {"gp5": _export_gp5, "ample_midi": _export_ample}
-        exporter = legacy_exporters.get(req.format)
-        if exporter is None:
-            raise HTTPException(400, f"Unsupported format: {req.format}")
-        out_path, note_count, measure_count = exporter(project_dir, exports_dir)
+        song_path = project_dir / "song_ir.json"
+        ir_path = project_dir / "ir.json"
+        merged_path = project_dir / "ir_merged.json"
+        if not song_path.exists() and not ir_path.exists() and not merged_path.exists():
+            raise HTTPException(
+                400,
+                "No repair result found. Export a ScoreDocument revision or run repair first.",
+            )
+        if song_path.exists():
+            out_path, note_count, measure_count = _export_song(
+                load_song_ir(song_path), req.format, exports_dir
+            )
+        else:
+            legacy_exporters = {"gp5": _export_gp5, "ample_midi": _export_ample}
+            exporter = legacy_exporters.get(req.format)
+            if exporter is None:
+                raise HTTPException(400, f"Unsupported format: {req.format}")
+            out_path, note_count, measure_count = exporter(project_dir, exports_dir)
 
     record = ExportRecord(
         project_id=project.id,
         format_id=req.format,
         file_path=str(out_path),
         note_count=note_count,
+        revision_id=revision_id,
+        revision_hash=revision_hash,
     )
     db.add(record)
     db.commit()
 
     download_url = f"/api/projects/{project_id}/exports/{record.id}/download"
     return {"code": 0, "data": ExportResponse(
-        download_url=download_url, format_id=req.format, note_count=note_count,
+        download_url=download_url,
+        format_id=req.format,
+        note_count=note_count,
+        revision_id=record.revision_id,
+        revision_hash=record.revision_hash,
     ).model_dump(), "message": "ok"}
 
 
@@ -187,6 +232,8 @@ def list_exports(
             "id": r.id,
             "format_id": r.format_id,
             "note_count": r.note_count,
+            "revision_id": r.revision_id,
+            "revision_hash": r.revision_hash,
             "created_at": r.created_at.isoformat() if r.created_at else None,
         }
         for r in records

@@ -157,6 +157,9 @@ class GuitarTrackIR:
     tuning: list[int]  # 6-string open-string MIDI pitches
     fret_count: int
     measures: list[GuitarMeasure] = field(default_factory=list)
+    capo: int = 0
+    program: int | None = None
+    mixer: dict[str, object] = field(default_factory=dict)
 
 
 # ─── Knowledge reference ───

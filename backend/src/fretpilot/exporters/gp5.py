@@ -111,7 +111,7 @@ def _make_rest_beats(
 
 
 def _apply_note_effects(event: GuitarNoteEvent, note: gp.Note) -> None:
-    """Apply direct articulation effects (vibrato/let_ring/palm_mute/staccato)."""
+    """Apply direct Guitar Pro note effects without rewriting the score."""
     for articulation in event.articulations:
         if articulation.type == "vibrato":
             note.effect.vibrato = True
@@ -121,6 +121,28 @@ def _apply_note_effects(event: GuitarNoteEvent, note: gp.Note) -> None:
             note.effect.palmMute = True
         elif articulation.type == "staccato":
             note.effect.staccato = True
+        elif articulation.type == "ghost_note":
+            note.effect.ghostNote = True
+        elif articulation.type == "accent":
+            note.effect.accentuatedNote = True
+        elif articulation.type == "heavy_accent":
+            note.effect.heavyAccentuatedNote = True
+        elif articulation.type == "harmonic":
+            note.effect.harmonic = gp.NaturalHarmonic()
+        elif articulation.type == "bend":
+            semitones = max(0.25, min(6.0, articulation.parameters.get("semitones", 1.0)))
+            bend_value = max(1, round(semitones * gp.BendEffect.semitoneLength))
+            note.effect.bend = gp.BendEffect(
+                type=gp.BendType.bend,
+                value=bend_value,
+                points=[
+                    gp.BendPoint(position=0, value=0),
+                    gp.BendPoint(
+                        position=gp.BendEffect.maxPosition,
+                        value=bend_value,
+                    ),
+                ],
+            )
 
 
 def _apply_linked_effects(
@@ -352,14 +374,22 @@ def _configure_track(gp_track: gp.Track, ir_track, number: int) -> None:
         maximum=40,
     )
     gp_track.fretCount = ir_track.fret_count
+    gp_track.offset = ir_track.capo
     gp_track.strings = [
         gp.GuitarString(number=i + 1, value=pitch)
         for i, pitch in enumerate(reversed(ir_track.tuning))
     ]
-    if ir_track.role == "bass":
+    if ir_track.program is not None:
+        gp_track.channel.instrument = max(0, min(127, ir_track.program))
+    elif ir_track.role == "bass":
         gp_track.channel.instrument = 33
     elif ir_track.role == "keys":
         gp_track.channel.instrument = 0
+    mixer = ir_track.mixer
+    gp_track.channel.volume = round(float(mixer.get("volume", 0.8)) * 127)
+    gp_track.channel.balance = round((float(mixer.get("pan", 0.0)) + 1) * 63.5)
+    gp_track.isMute = bool(mixer.get("mute", False))
+    gp_track.isSolo = bool(mixer.get("solo", False))
 
 
 def _configure_song(project: GuitarProjectIR) -> gp.Song:
@@ -487,6 +517,8 @@ __all__ = ["GP5Exporter", "export_bandpilot"]
 _DRUM_PIECE_TO_PITCH: dict[str, int] = {
     "kick": 36,
     "snare": 38,
+    "side_stick": 37,
+    "hand_clap": 39,
     "hihat_closed": 42,
     "hihat_pedal": 44,
     "hihat_open": 46,
@@ -501,6 +533,9 @@ _DRUM_PIECE_TO_PITCH: dict[str, int] = {
     "ride_2": 59,
     "china": 52,
     "splash": 55,
+    "tambourine": 54,
+    "cowbell": 56,
+    "vibraslap": 58,
 }
 
 
@@ -512,8 +547,19 @@ def _configure_drum_track(gp_track: gp.Track, ir_track: DrumTrackIR, number: int
         fallback=f"Drums {number}",
         maximum=40,
     )
-    # Percussion track: 6-line staff representing drum pieces
+    # GP5 requires virtual strings as serialization slots for simultaneous
+    # percussion notes. They are not visual staff lines: the rendered score
+    # is a standard five-line percussion staff with tablature hidden.
     gp_track.isPercussionTrack = True
+    gp_track.settings.notation = True
+    gp_track.settings.tablature = False
+    gp_track.channel.channel = 9  # General MIDI channel 10 (zero-based here).
+    gp_track.channel.effectChannel = 9
+    mixer = ir_track.mixer
+    gp_track.channel.volume = round(float(mixer.get("volume", 0.8)) * 127)
+    gp_track.channel.balance = round((float(mixer.get("pan", 0.0)) + 1) * 63.5)
+    gp_track.isMute = bool(mixer.get("mute", False))
+    gp_track.isSolo = bool(mixer.get("solo", False))
     gp_track.strings = [
         gp.GuitarString(number=i + 1, value=0)
         for i in range(6)
@@ -523,27 +569,37 @@ def _configure_drum_track(gp_track: gp.Track, ir_track: DrumTrackIR, number: int
 def _populate_drum_voice(
     ir_measure: DrumMeasure,
     gp_measure: gp.Measure,
+    voice_number: int,
+    *,
+    fill_empty: bool = False,
 ) -> tuple[int, list[str]]:
     """Populate a drum measure's voice with beats and notes.
 
-    Drum notes use GM percussion pitches on channel 10. Each note is placed
-    on string 1 with the MIDI pitch as the note value (PyGuitarPro convention
-    for percussion tracks).
+    Drum notes use GM percussion pitches on channel 10. Simultaneous hits use
+    separate virtual strings because GP5 serializes a beat with a string
+    bitmask; those slots are hidden from the notation-only drum staff.
     """
     warnings: list[str] = []
-    voice = gp_measure.voices[0]
+    voice = gp_measure.voices[voice_number - 1]
     voice.beats.clear()
+    voice.direction = (
+        gp.VoiceDirection.up if voice_number == 1 else gp.VoiceDirection.down
+    )
 
     # Group events by onset beat.
     grouped: dict[float, list[DrumNoteEvent]] = {}
     for event in ir_measure.events:
+        if event.score.voice != voice_number:
+            continue
         grouped.setdefault(event.score.start_beat, []).append(event)
     grouped_list = sorted(grouped.items(), key=lambda item: item[0])
+    if not grouped_list and voice_number == 2 and not fill_empty:
+        return 0, warnings
 
     cursor = gp_measure.start
     note_count = 0
 
-    for absolute_start_beat, events in grouped_list:
+    for group_index, (absolute_start_beat, events) in enumerate(grouped_list):
         events = sorted(events, key=lambda event: (event.pitch, event.id))
         if len(events) > len(gp_measure.track.strings):
             raise UnsupportedGuitarIR(
@@ -557,12 +613,32 @@ def _populate_drum_voice(
         if start_tick > cursor:
             voice.beats.extend(_make_rest_beats(voice, cursor, start_tick - cursor))
             cursor = start_tick
+        elif start_tick < cursor:
+            raise UnsupportedGuitarIR(
+                f"Drum onset at beat {absolute_start_beat} overlaps a previous "
+                f"beat in voice {voice_number}; repair/validate the score first."
+            )
 
-        # Duration = shortest event in this beat group.
+        # Reject score durations that cross the next onset or barline. The
+        # pipeline/validator normally guarantees this; keeping the export
+        # guard prevents malformed legacy IR from producing red GP notes.
         durations = [
             _beats_to_ticks(e.score.duration_beats) for e in events
         ]
         short_ticks = min(durations) if durations else gp.Duration.quarterTime
+        next_start_tick = (
+            gp_measure.start
+            + _beats_to_ticks(grouped_list[group_index + 1][0] - ir_measure.start_beat)
+            if group_index + 1 < len(grouped_list)
+            else gp_measure.end
+        )
+        available_ticks = max(1, next_start_tick - start_tick)
+        if short_ticks > available_ticks:
+            raise UnsupportedGuitarIR(
+                f"Drum duration at beat {absolute_start_beat} overlaps the next "
+                f"onset or barline in voice {voice_number}; repair/validate the "
+                "score first."
+            )
 
         for seg_idx, duration in enumerate(_split_duration_ticks(short_ticks)):
             beat = gp.Beat(
@@ -578,8 +654,12 @@ def _populate_drum_voice(
             # the file. Drum strings are purely serialization slots, so assign
             # one distinct slot per simultaneous hit.
             for virtual_string, event in enumerate(events, start=1):
-                pitch = _DRUM_PIECE_TO_PITCH.get(
-                    event.piece, event.pitch
+                # The source GM pitch is score identity (e.g. 35 vs 36 kick,
+                # 38 vs 40 snare, 49 vs 57 crash) and must survive round-trip.
+                pitch = (
+                    event.pitch
+                    if 1 <= event.pitch <= 127
+                    else _DRUM_PIECE_TO_PITCH.get(event.piece, 38)
                 )
                 note = gp.Note(
                     beat,
@@ -654,6 +734,8 @@ def export_bandpilot(
     guitar_ir: GuitarProjectIR | None,
     drum_ir: DrumProjectIR | None,
     output_path: Path | str,
+    *,
+    track_order: Iterable[str] | None = None,
 ) -> ExportResult:
     """Export guitar + drum IRs as a single multi-track .gp5 file.
 
@@ -661,6 +743,7 @@ def export_bandpilot(
         guitar_ir: Guitar project IR (may be None for drum-only projects).
         drum_ir: Drum project IR (may be None for guitar-only projects).
         output_path: Destination .gp5 file path.
+        track_order: Optional stable track-ID order from the source score.
 
     Returns:
         ExportResult with combined note count and warnings.
@@ -740,6 +823,8 @@ def export_bandpilot(
         )
     total_note_count = 0
     track_number = 1
+    exported_track_ids: list[str] = []
+    gp_tracks_by_id: dict[str, gp.Track] = {}
 
     # ── Guitar tracks ──
     for ir_track in guitar_tracks:
@@ -749,6 +834,8 @@ def export_bandpilot(
             gp_track = gp.Track(song, number=track_number)
             song.tracks.append(gp_track)
         _configure_track(gp_track, ir_track, track_number)
+        exported_track_ids.append(ir_track.id)
+        gp_tracks_by_id[ir_track.id] = gp_track
 
         note_lookup: dict[str, gp.Note] = {}
         uses_voice_two = any(
@@ -786,16 +873,41 @@ def export_bandpilot(
             gp_track = gp.Track(song, number=track_number)
             song.tracks.append(gp_track)
         _configure_drum_track(gp_track, ir_track, track_number)
+        exported_track_ids.append(ir_track.id)
+        gp_tracks_by_id[ir_track.id] = gp_track
+        uses_voice_two = any(
+            event.score.voice == 2
+            for measure in ir_track.measures
+            for event in measure.events
+        )
 
         for gp_measure in gp_track.measures:
             ir_measure = _measure_by_number(ir_track.measures, gp_measure)
             if ir_measure is None:
-                _fill_rest_measure(gp_measure)
+                _fill_rest_measure(gp_measure, fill_voice_two=uses_voice_two)
                 continue
-            exported, drum_warnings = _populate_drum_voice(ir_measure, gp_measure)
-            total_note_count += exported
-            warnings.extend(drum_warnings)
+            for voice_number in (1, 2):
+                exported, drum_warnings = _populate_drum_voice(
+                    ir_measure,
+                    gp_measure,
+                    voice_number,
+                    fill_empty=voice_number == 2 and uses_voice_two,
+                )
+                total_note_count += exported
+                warnings.extend(drum_warnings)
         track_number += 1
+
+    if track_order is not None:
+        requested: list[str] = []
+        for track_id in track_order:
+            if track_id in gp_tracks_by_id and track_id not in requested:
+                requested.append(track_id)
+        requested.extend(
+            track_id for track_id in exported_track_ids if track_id not in requested
+        )
+        song.tracks = [gp_tracks_by_id[track_id] for track_id in requested]
+        for number, gp_track in enumerate(song.tracks, start=1):
+            gp_track.number = number
 
     gp.write(song, destination, version=(5, 1, 0))
     return ExportResult(

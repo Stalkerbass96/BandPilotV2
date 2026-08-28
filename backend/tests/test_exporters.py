@@ -277,6 +277,39 @@ class TestGP5Exporter:
         assert out_path.exists()
         assert result.note_count > 0
 
+    def test_parse_back_preserves_direct_guitar_effects(self, tmp_path: Path) -> None:
+        ir = _build_simple_ir()
+        ir.tracks[0].capo = 2
+        ir.tracks[0].program = 29
+        ir.tracks[0].mixer = {"volume": 0.65, "pan": -0.25, "mute": True, "solo": False}
+        ir.tracks[0].measures[0].events[0].performance.velocity = 96
+        ir.tracks[0].measures[0].events[0].articulations = [
+            IRArticulation(type="bend", confidence=1, reason="manual", parameters={"semitones": 1}),
+            IRArticulation(type="harmonic", confidence=1, reason="manual"),
+            IRArticulation(type="vibrato", confidence=1, reason="manual"),
+            IRArticulation(type="ghost_note", confidence=1, reason="manual"),
+            IRArticulation(type="accent", confidence=1, reason="manual"),
+        ]
+
+        out_path = tmp_path / "direct-effects.gp5"
+        GP5Exporter().export(ir, out_path)
+        parsed = gp.parse(out_path)
+        parsed_track = parsed.tracks[0]
+        note = parsed_track.measures[0].voices[0].beats[0].notes[0]
+
+        assert note.effect.bend is not None
+        assert note.effect.bend.value == 1
+        assert isinstance(note.effect.harmonic, gp.NaturalHarmonic)
+        assert note.effect.vibrato is True
+        assert note.effect.ghostNote is True
+        assert note.effect.accentuatedNote is True
+        assert note.velocity == 95  # GP5's nearest forte velocity bucket.
+        assert parsed_track.offset == 2
+        assert parsed_track.channel.instrument == 29
+        assert parsed_track.channel.volume == 80  # GP5 quantizes channel volume.
+        assert parsed_track.channel.balance == 48
+        assert parsed_track.isMute is True
+
     def test_export_rejects_empty_ir(self, tmp_path: Path) -> None:
         ir = GuitarProjectIR(title="Empty", source="s")
         with pytest.raises(UnsupportedGuitarIR):

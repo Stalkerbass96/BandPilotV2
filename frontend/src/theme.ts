@@ -2,7 +2,7 @@ import { createTheme } from "@mui/material/styles";
 import { palette } from "./styles/tokens";
 
 /**
- * MUI theme for FretPilot v2 — Dark-first.
+ * MUI theme for BandPilot's focused, editorial workspace.
  *
  * All colors are sourced from `src/styles/tokens.ts` — the same file that
  * drives the Tailwind config — guaranteeing visual consistency between
@@ -10,7 +10,7 @@ import { palette } from "./styles/tokens";
  */
 export const theme = createTheme({
   palette: {
-    mode: "dark",
+    mode: "light",
     primary: {
       main: palette.brandPrimary,
       dark: palette.brandHover,
@@ -53,16 +53,19 @@ export const theme = createTheme({
     ].join(","),
     h5: { fontWeight: 700 },
     h6: { fontWeight: 600 },
+    button: { fontWeight: 700, textTransform: "none" },
   },
   shape: {
     borderRadius: 10,
   },
   components: {
     MuiButton: {
+      defaultProps: { disableElevation: true },
       styleOverrides: {
+        root: { borderRadius: 10, minHeight: 40 },
         containedPrimary: {
           backgroundColor: palette.brandPrimary,
-          color: "#1A1208",
+          color: "#FFFFFF",
           fontWeight: 600,
           "&:hover": { backgroundColor: palette.brandHover },
         },
@@ -135,6 +138,11 @@ export const theme = createTheme({
         root: {
           color: palette.brandPrimary,
         },
+      },
+    },
+    MuiTooltip: {
+      styleOverrides: {
+        tooltip: { borderRadius: 8, fontSize: 12 },
       },
     },
   },

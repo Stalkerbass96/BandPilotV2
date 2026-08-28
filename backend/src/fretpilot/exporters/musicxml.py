@@ -6,6 +6,7 @@ from collections import defaultdict
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from fretpilot.drum.notation import DRUM_DISPLAY, DRUM_NOTEHEAD
 from fretpilot.exporters.base import ExportResult
 from fretpilot.ir.song import InstrumentTrackIR, ScoreEventIR, SongIR
 from fretpilot.validation import validate_song
@@ -13,14 +14,7 @@ from fretpilot.validation import validate_song
 DIVISIONS = 480
 _PITCH_STEPS = ("C", "C", "D", "D", "E", "F", "F", "G", "G", "A", "A", "B")
 _PITCH_ALTERS = (0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0)
-_DRUM_DISPLAY = {
-    "kick": ("F", 3),
-    "snare": ("C", 5),
-    "hihat_closed": ("G", 5),
-    "hihat_open": ("G", 5),
-    "ride": ("F", 5),
-    "crash": ("A", 5),
-}
+_DYNAMIC_MARKS = {"ppp", "pp", "p", "mp", "mf", "f", "ff", "fff"}
 
 
 def _ticks(beats: float) -> int:
@@ -50,6 +44,37 @@ def _type_name(duration_beats: float) -> str:
     return min(values, key=lambda item: abs(item[0] - duration_beats))[1]
 
 
+def _written_duration(duration_beats: float) -> tuple[str, int, tuple[int, int] | None]:
+    values = (
+        (4.0, "whole"),
+        (2.0, "half"),
+        (1.0, "quarter"),
+        (0.5, "eighth"),
+        (0.25, "16th"),
+        (0.125, "32nd"),
+        (0.0625, "64th"),
+    )
+    for value, name in values:
+        if abs(duration_beats - value) <= 1e-8:
+            return name, 0, None
+        if abs(duration_beats - value * 1.5) <= 1e-8:
+            return name, 1, None
+        if abs(duration_beats - value * 2 / 3) <= 1e-8:
+            return name, 0, (3, 2)
+    return _type_name(duration_beats), 0, None
+
+
+def _write_duration_notation(note: ET.Element, duration_beats: float) -> None:
+    name, dots, tuplet = _written_duration(duration_beats)
+    ET.SubElement(note, "type").text = name
+    for _ in range(dots):
+        ET.SubElement(note, "dot")
+    if tuplet is not None:
+        time_modification = ET.SubElement(note, "time-modification")
+        ET.SubElement(time_modification, "actual-notes").text = str(tuplet[0])
+        ET.SubElement(time_modification, "normal-notes").text = str(tuplet[1])
+
+
 def _notations(note: ET.Element, song: SongIR, event: ScoreEventIR) -> None:
     realization = event.realization
     techniques = {
@@ -57,7 +82,13 @@ def _notations(note: ET.Element, song: SongIR, event: ScoreEventIR) -> None:
         for technique in song.score.techniques
         if technique.id in event.technique_ids
     }
-    if realization.string is None and realization.finger is None and not techniques:
+    if (
+        realization.string is None
+        and realization.finger is None
+        and not techniques
+        and not event.score.tie_in
+        and not event.score.tie_out
+    ):
         return
     notations = ET.SubElement(note, "notations")
     technical = None
@@ -72,6 +103,10 @@ def _notations(note: ET.Element, song: SongIR, event: ScoreEventIR) -> None:
     if realization.finger is not None:
         assert technical is not None
         ET.SubElement(technical, "fingering").text = str(realization.finger)
+    if event.score.tie_in:
+        ET.SubElement(notations, "tied", type="stop")
+    if event.score.tie_out:
+        ET.SubElement(notations, "tied", type="start")
     articulation_types = {
         technique.type
         for technique in techniques.values()
@@ -120,7 +155,7 @@ def _note_element(
     if chord:
         ET.SubElement(note, "chord")
     if track.family == "drums":
-        display_step, octave = _DRUM_DISPLAY.get(
+        display_step, octave = DRUM_DISPLAY.get(
             event.realization.piece or "", ("C", 5)
         )
         unpitched = ET.SubElement(note, "unpitched")
@@ -134,7 +169,14 @@ def _note_element(
         _pitch(note, event.pitch)
     ET.SubElement(note, "duration").text = str(_ticks(event.score.duration_beats))
     ET.SubElement(note, "voice").text = str(event.score.voice)
-    ET.SubElement(note, "type").text = _type_name(event.score.duration_beats)
+    _write_duration_notation(note, event.score.duration_beats)
+    if track.family == "drums":
+        ET.SubElement(note, "stem").text = (
+            "down" if event.score.voice == 2 else "up"
+        )
+        notehead = DRUM_NOTEHEAD.get(event.realization.piece or "")
+        if notehead:
+            ET.SubElement(note, "notehead").text = notehead
     if event.score.tie_in:
         ET.SubElement(note, "tie", type="stop")
     if event.score.tie_out:
@@ -151,7 +193,39 @@ def _rest(parent: ET.Element, duration: float, voice: int) -> None:
     ET.SubElement(note, "rest")
     ET.SubElement(note, "duration").text = str(_ticks(duration))
     ET.SubElement(note, "voice").text = str(voice)
-    ET.SubElement(note, "type").text = _type_name(duration)
+    _write_duration_notation(note, duration)
+
+
+def _event_dynamic(song: SongIR, event: ScoreEventIR) -> tuple[str, int] | None:
+    performance = next(
+        (value for value in song.performance.events if value.note_id == event.id),
+        None,
+    )
+    if performance is None:
+        return None
+    dynamic = next(
+        (
+            str(control["value"])
+            for control in performance.controls
+            if control.get("type") == "dynamic" and control.get("value") in _DYNAMIC_MARKS
+        ),
+        None,
+    )
+    return (dynamic, performance.velocity) if dynamic is not None else None
+
+
+def _dynamic_direction(
+    parent: ET.Element,
+    dynamic: str,
+    velocity: int,
+    voice: int,
+) -> None:
+    direction = ET.SubElement(parent, "direction", placement="below")
+    direction_type = ET.SubElement(direction, "direction-type")
+    dynamics = ET.SubElement(direction_type, "dynamics")
+    ET.SubElement(dynamics, dynamic)
+    ET.SubElement(direction, "voice").text = str(voice)
+    ET.SubElement(direction, "sound", dynamics=str(round(velocity / 127 * 100)))
 
 
 def _attributes(parent: ET.Element, track: InstrumentTrackIR, measure) -> None:
@@ -174,6 +248,9 @@ def _attributes(parent: ET.Element, track: InstrumentTrackIR, measure) -> None:
         ET.SubElement(clef, "sign").text = sign
         if sign != "percussion":
             ET.SubElement(clef, "line").text = "4" if sign == "F" else "2"
+        else:
+            staff_details = ET.SubElement(attributes, "staff-details")
+            ET.SubElement(staff_details, "staff-lines").text = "5"
 
 
 def _write_measure(parent: ET.Element, song: SongIR, track: InstrumentTrackIR, measure) -> None:
@@ -194,6 +271,21 @@ def _write_measure(parent: ET.Element, song: SongIR, track: InstrumentTrackIR, m
         for onset, events in sorted(groups.items()):
             _rest(xml_measure, onset - cursor, voice)
             ordered = sorted(events, key=lambda item: (-item.score.duration_beats, item.pitch))
+            explicit_dynamic = next(
+                (
+                    value
+                    for event in ordered
+                    if (value := _event_dynamic(song, event)) is not None
+                ),
+                None,
+            )
+            if explicit_dynamic is not None:
+                _dynamic_direction(
+                    xml_measure,
+                    explicit_dynamic[0],
+                    explicit_dynamic[1],
+                    voice,
+                )
             for index, event in enumerate(ordered):
                 _note_element(xml_measure, song, track, event, chord=index > 0)
             cursor = max(cursor, onset + max(event.score.duration_beats for event in events))

@@ -7,6 +7,7 @@ notes that cross measure boundaries into tied fragments.
 from __future__ import annotations
 
 from fretpilot.engine.context import MeasureBoundary, PipelineContext, SplitNote
+from fretpilot.engine.drum_context import DrumPipelineContext
 
 _EPSILON = 1e-8
 
@@ -121,8 +122,35 @@ class MeasureSplitStage:
 
     name = "measure_split"
 
-    def run(self, ctx: PipelineContext) -> PipelineContext:
+    def run(self, ctx: PipelineContext | DrumPipelineContext) -> PipelineContext | DrumPipelineContext:
         if not ctx.quantized_notes:
+            ctx.record_stage(self.name)
+            return ctx
+
+        if isinstance(ctx, DrumPipelineContext):
+            # A percussion note-off is a performance/sample gate, never a tie.
+            # Build measures from onsets and emit exactly one score hit per
+            # source hit so long gates cannot create false hits in later bars.
+            last_onset = max(n.quantized_start_beat for n in ctx.quantized_notes)
+            ctx.measures = _compute_measure_boundaries(
+                ctx, last_onset + 1.0 / 64.0
+            )
+            for note in ctx.quantized_notes:
+                measure = _find_measure(ctx.measures, note.quantized_start_beat)
+                safe_duration = min(
+                    max(note.quantized_duration_beats, 1.0 / 64.0),
+                    measure.end_beat - note.quantized_start_beat,
+                )
+                ctx.split_notes.append(
+                    _build_split_note(
+                        note,
+                        measure,
+                        note.quantized_start_beat,
+                        safe_duration,
+                        0,
+                        1,
+                    )
+                )
             ctx.record_stage(self.name)
             return ctx
 

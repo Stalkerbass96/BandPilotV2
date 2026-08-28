@@ -21,6 +21,10 @@ def test_fresh_database_upgrades_to_head(tmp_path) -> None:
         "export_records",
         "projects",
         "repair_jobs",
+        "score_commands",
+        "score_documents",
+        "score_revisions",
+        "score_snapshots",
         "users",
     }
     project_columns = {column["name"] for column in inspector.get_columns("projects")}
@@ -29,6 +33,15 @@ def test_fresh_database_upgrades_to_head(tmp_path) -> None:
         column["name"] for column in inspector.get_columns("repair_jobs")
     }
     assert "result_json" in repair_job_columns
+    export_columns = {
+        column["name"] for column in inspector.get_columns("export_records")
+    }
+    assert {"revision_id", "revision_hash"} <= export_columns
+    revision_uniques = {
+        tuple(constraint["column_names"])
+        for constraint in inspector.get_unique_constraints("score_revisions")
+    }
+    assert ("document_id", "revision_number") in revision_uniques
 
 
 def test_in_memory_database_uses_application_connection() -> None:
@@ -75,4 +88,11 @@ def test_recognized_pre_alembic_schema_is_adopted(tmp_path) -> None:
     inspector = inspect(get_engine())
     project_columns = {column["name"] for column in inspector.get_columns("projects")}
     assert {"instrument_family", "track_summary"} <= project_columns
-    assert "alembic_version" in inspector.get_table_names()
+    assert {
+        "alembic_version",
+        "repair_jobs",
+        "score_documents",
+        "score_revisions",
+        "score_snapshots",
+        "score_commands",
+    } <= set(inspector.get_table_names())

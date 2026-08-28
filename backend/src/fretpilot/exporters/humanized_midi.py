@@ -10,7 +10,7 @@ import mido
 
 from fretpilot.config import get_settings
 from fretpilot.exporters.base import ExportResult
-from fretpilot.ir.song import PerformanceEventIR, SongIR
+from fretpilot.ir.song import InstrumentTrackIR, PerformanceEventIR, ScoreEventIR, SongIR
 from fretpilot.knowledge.registry import KnowledgeRegistry
 from fretpilot.validation import validate_song
 
@@ -164,6 +164,36 @@ def _conductor(song: SongIR) -> mido.MidiTrack:
     return track
 
 
+def _tie_key(track: InstrumentTrackIR, event: ScoreEventIR) -> tuple[object, ...]:
+    if track.family in {"guitar", "bass"}:
+        return (event.pitch, event.realization.string)
+    if track.family == "keys":
+        return (event.pitch, event.realization.hand)
+    return (event.pitch,)
+
+
+def _tie_links(track: InstrumentTrackIR) -> dict[str, str]:
+    events = [event for measure in track.measures for event in measure.events]
+    links: dict[str, str] = {}
+    for source in events:
+        if not source.score.tie_out:
+            continue
+        end = source.score.start_beat + source.score.duration_beats
+        target = next(
+            (
+                candidate
+                for candidate in events
+                if candidate.score.tie_in
+                and abs(candidate.score.start_beat - end) <= 1e-8
+                and _tie_key(track, candidate) == _tie_key(track, source)
+            ),
+            None,
+        )
+        if target is not None:
+            links[source.id] = target.id
+    return links
+
+
 class HumanizedMidiSongExporter:
     format_id = "humanized_midi"
 
@@ -187,16 +217,37 @@ class HumanizedMidiSongExporter:
             if score_track.family != "drums":
                 program = max(0, min(127, int(score_track.instrument.get("program", 0))))
                 track.append(mido.Message("program_change", program=program, channel=channel, time=0))
+            mixer = score_track.instrument.get("mixer", {})
+            if isinstance(mixer, dict):
+                volume = max(0, min(127, round(float(mixer.get("volume", 0.8)) * 127)))
+                pan = max(0, min(127, round((float(mixer.get("pan", 0.0)) + 1) * 63.5)))
+                track.append(mido.Message("control_change", control=7, value=volume, channel=channel, time=0))
+                track.append(mido.Message("control_change", control=10, value=pan, channel=channel, time=0))
             timed: list[tuple[int, int, mido.Message]] = []
+            tie_links = _tie_links(score_track)
+            tie_destinations = set(tie_links.values())
             for measure in score_track.measures:
                 for event in measure.events:
                     # A split note is one sounding performance event; tie continuations
                     # are notation-only and must not retrigger MIDI.
-                    if event.score.tie_in:
+                    if event.id in tie_destinations:
                         continue
                     rendered = performance[event.id]
                     start = _tick(rendered.start_beat)
                     end = max(start + 1, _tick(rendered.start_beat + rendered.duration_beats))
+                    cursor_id = event.id
+                    visited: set[str] = set()
+                    while cursor_id in tie_links and cursor_id not in visited:
+                        visited.add(cursor_id)
+                        cursor_id = tie_links[cursor_id]
+                        continuation = performance[cursor_id]
+                        end = max(
+                            end,
+                            _tick(
+                                continuation.start_beat
+                                + continuation.duration_beats
+                            ),
+                        )
                     timed.append(
                         (start, 1, mido.Message("note_on", note=event.pitch, velocity=rendered.velocity, channel=channel, time=0))
                     )

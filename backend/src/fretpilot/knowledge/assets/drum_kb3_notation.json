@@ -13,6 +13,46 @@
       "payload": {
         "gm_drum_map_enabled": true,
         "use_drum_staff": true,
+        "staff_lines": 5,
+        "show_tablature": false,
+        "voice_policy": "hands_up_feet_down",
+        "upper_voice_pieces": [
+          "snare",
+          "side_stick",
+          "hand_clap",
+          "tom_floor",
+          "tom_low",
+          "tom_mid",
+          "tom_high",
+          "hihat_closed",
+          "hihat_open",
+          "crash",
+          "crash_2",
+          "ride",
+          "ride_bell",
+          "ride_2",
+          "china",
+          "splash",
+          "tambourine",
+          "cowbell",
+          "vibraslap"
+        ],
+        "lower_voice_pieces": [
+          "kick",
+          "hihat_pedal"
+        ],
+        "upper_voice_stem": "up",
+        "lower_voice_stem": "down",
+        "written_duration_source": "quantized_source_clamped_to_same_voice_onset_or_barline",
+        "long_duration_policy": "preserve_when_non_overlapping",
+        "preserve_source_gm_pitch": true,
+        "cross_notehead_categories": [
+          "hihat",
+          "cymbal",
+          "side_stick",
+          "hand_clap",
+          "tambourine"
+        ],
         "show_sticking": false,
         "velocity_as_accent": true,
         "ghost_note_threshold": 30,
@@ -27,8 +67,26 @@
         "source_type": "hand_authored",
         "source_ids": [
           "bandpilot-internal-policy-v1",
+          "musicxml-4.0",
           "guitar-pro-5-spec"
-        ]
+        ],
+        "notes": "Normative five-line percussion layout; MIDI note-off gates remain performance data and do not determine written drum duration."
+      },
+      "evaluation": {
+        "status": "approved",
+        "confidence": 0.96,
+        "tested_against": [
+          "user-gtp-corpus-075d0053"
+        ],
+        "metrics": {
+          "files_parsed": 1567,
+          "drum_tracks": 846,
+          "drum_notes": 992484,
+          "voice_1_closed_measures": 79814,
+          "voice_1_open_measures": 468,
+          "voice_2_note_count": 799,
+          "quarter_or_shorter_observation": "over_99_percent"
+        }
       }
     }
   ]

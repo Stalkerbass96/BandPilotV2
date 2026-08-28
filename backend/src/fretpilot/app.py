@@ -38,11 +38,22 @@ def _register_exception_handlers(app: FastAPI) -> None:
 
 
 def _register_routes(app: FastAPI) -> None:
-    from fretpilot.api.routes import auth, byok, elearning, exports, projects, tunings
+    from fretpilot.api.routes import (
+        auth,
+        byok,
+        elearning,
+        exports,
+        projects,
+        score_documents,
+        tunings,
+    )
 
     app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
     app.include_router(byok.router, prefix="/api/byok", tags=["byok"])
     app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+    app.include_router(
+        score_documents.router, prefix="/api/projects", tags=["score-documents"]
+    )
     app.include_router(exports.router, prefix="/api/projects", tags=["exports"])
     app.include_router(tunings.router, prefix="/api/tunings", tags=["tunings"])
     app.include_router(elearning.router, prefix="/api/elearning", tags=["elearning"])

@@ -28,6 +28,7 @@ import { motion } from "framer-motion";
 import { exportsApi, projectsApi } from "../api/client";
 import type { ExportRecord, ProjectDetail } from "../api/types";
 import TabViewer from "../components/TabViewer";
+import JourneyStepper from "../components/JourneyStepper";
 import { ExportSkeleton } from "../components/Skeletons";
 import { palette } from "../styles/tokens";
 import { canExportProject } from "../utils/projectStatus";
@@ -50,40 +51,35 @@ const FORMATS: FormatOption[] = [
     id: "gp5",
     label: "Guitar Pro 5 (.gp5)",
     shortLabel: "GP5",
-    description:
-      "Notation-focused score file. Opens in Guitar Pro, TuxGuitar, MuseScore.",
+    description: "Best for rehearsal and performance. Opens in Guitar Pro and compatible score apps.",
     icon: <DescriptionIcon sx={{ fontSize: 40, color: palette.brandPrimary }} />,
   },
   {
     id: "musicxml",
     label: "MusicXML 4.0 (.musicxml)",
     shortLabel: "MusicXML",
-    description:
-      "Interchange score with bass TAB, keyboard hands/fingers, drum notation, ties, and techniques.",
+    description: "Move the score into MuseScore, Dorico, Sibelius and other notation software.",
     icon: <DescriptionIcon sx={{ fontSize: 40, color: palette.brandPrimary }} />,
   },
   {
     id: "humanized_midi",
     label: "Humanized Band MIDI (.mid)",
     shortLabel: "Human MIDI",
-    description:
-      "Deterministic multi-track performance MIDI with musical timing, dynamics, and gate shaping.",
+    description: "Continue producing in your DAW with more natural timing, dynamics and note lengths.",
     icon: <AudioFileIcon sx={{ fontSize: 40, color: palette.brandAccent }} />,
   },
   {
     id: "ample_midi",
     label: "Ample Guitar MIDI (.mid)",
     shortLabel: "MIDI",
-    description:
-      "Performance-focused MIDI with keyswitches for Ample Guitar Eclipse.",
+    description: "Advanced MIDI prepared with keyswitches for Ample Guitar Eclipse.",
     icon: <AudioFileIcon sx={{ fontSize: 40, color: palette.brandAccent }} />,
   },
   {
     id: "humanized_ample_eclipse_midi",
     label: "Humanized Ample Eclipse (.mid)",
     shortLabel: "Ample Human",
-    description:
-      "Humanized guitar performance plus Ample Guitar Eclipse keyswitch and controller mapping.",
+    description: "Natural performance timing plus Ample Guitar Eclipse articulation mapping.",
     icon: <AudioFileIcon sx={{ fontSize: 40, color: palette.brandAccent }} />,
   },
 ];
@@ -216,19 +212,19 @@ export default function ExportPage(): JSX.Element {
 
   return (
     <Box className="flex flex-col gap-6">
+      <JourneyStepper activeStep={2} />
       <Box
-        className="rounded-2xl px-6 py-7"
-        sx={{
-          background: `linear-gradient(135deg, ${palette.elevated} 0%, ${palette.surface} 100%)`,
-          border: `1px solid ${palette.borderDefault}`,
-        }}
+        sx={{ mt: 2 }}
       >
-        <Typography variant="h5" fontWeight={700} sx={{ color: palette.textPrimary, mb: 1, letterSpacing: "-0.01em" }}>
-          Export
+        <Typography className="bp-eyebrow">Ready to play</Typography>
+        <Typography variant="h4" fontWeight={800} sx={{ color: palette.textPrimary, mt: 1, mb: 1, letterSpacing: "-.035em" }}>
+          Choose where your score goes next
         </Typography>
         <Typography variant="body2" sx={{ color: palette.textSecondary, lineHeight: 1.6 }}>
           {project
-            ? `Export repaired project "${project.title}" to your preferred format.`
+            ? canExport
+              ? `${project.title} is ready. Guitar Pro is the best default for rehearsal and performance.`
+              : `${project.title} is still a draft. Finish making it playable before choosing an export.`
             : "Loading project..."}
         </Typography>
       </Box>
@@ -246,8 +242,7 @@ export default function ExportPage(): JSX.Element {
 
       {project && !canExport && (
         <Alert severity="warning" sx={{ borderRadius: 2 }}>
-          This project has not been repaired yet. Run the repair pipeline in the
-          Workbench before exporting.
+          This score is still a draft. Return to “Make playable” and create the score before exporting.
         </Alert>
       )}
       {project?.status === "partial" && (
@@ -257,9 +252,13 @@ export default function ExportPage(): JSX.Element {
         </Alert>
       )}
 
-      {/* ── Format cards ── */}
+      <Box className="flex items-center justify-between mt-2">
+        <Box><Typography className="bp-eyebrow">Download</Typography><Typography sx={{ color: palette.textPrimary, fontSize: 20, fontWeight: 800, mt: .5 }}>Pick a format</Typography></Box>
+        <Typography sx={{ color: palette.textTertiary, fontSize: 11 }}>You can export again at any time</Typography>
+      </Box>
+
       <Box className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-        {FORMATS.map((fmt, index) => {
+        {FORMATS.filter((fmt) => !fmt.id.includes("ample")).map((fmt, index) => {
           const formatAvailable = canExportFormat(fmt.id, project?.tracks);
           const unavailableReason = exportUnavailableReason(fmt.id, project?.tracks);
           return (
@@ -274,16 +273,20 @@ export default function ExportPage(): JSX.Element {
               className="rounded-xl p-5 transition-shadow duration-200"
               sx={{
                 backgroundColor: palette.elevated,
-                border: `1px solid ${palette.borderDefault}`,
+                border: `1px solid ${fmt.id === "gp5" ? palette.brandPrimary : palette.borderDefault}`,
                 height: "100%",
+                position: "relative",
                 "&:hover": {
                   borderColor: palette.brandPrimary,
                   boxShadow: "0 4px 20px rgba(232, 162, 75, 0.12)",
                 },
               }}
             >
+              {fmt.id === "gp5" && (
+                <Chip label="Recommended" size="small" sx={{ position: "absolute", top: 14, right: 14, background: `${palette.brandPrimary}14`, color: palette.brandPrimary, fontWeight: 800, fontSize: 10 }} />
+              )}
               <Box className="flex items-center gap-3 mb-3">
-                {fmt.icon}
+                <Box className="flex items-center justify-center" sx={{ width: 44, height: 44, borderRadius: 2.5, background: palette.subtle }}>{fmt.icon}</Box>
                 <Typography
                   variant="h6"
                   fontWeight={600}
@@ -314,7 +317,9 @@ export default function ExportPage(): JSX.Element {
                 }
                 sx={{
                   textTransform: "none",
-                  backgroundColor: palette.brandPrimary,
+                  backgroundColor: fmt.id === "gp5" ? palette.brandPrimary : "transparent",
+                  color: fmt.id === "gp5" ? "#fff" : palette.textPrimary,
+                  border: fmt.id === "gp5" ? "none" : `1px solid ${palette.borderHover}`,
                   "&:hover": { backgroundColor: palette.brandHover },
                 }}
               >
@@ -334,6 +339,25 @@ export default function ExportPage(): JSX.Element {
           </motion.div>
           );
         })}
+      </Box>
+
+      <Box component="details" className="bp-card" sx={{ p: 2.5 }}>
+        <Box component="summary" sx={{ color: palette.textPrimary, fontSize: 13, fontWeight: 750, cursor: "pointer", listStylePosition: "inside" }}>
+          Sound-library MIDI <span style={{ color: palette.textTertiary, fontWeight: 500 }}>· advanced</span>
+        </Box>
+        <Typography sx={{ color: palette.textSecondary, fontSize: 12, mt: 1, ml: 2.5 }}>Use these only when your DAW session includes Ample Guitar Eclipse.</Typography>
+        <Box className="flex flex-col mt-3">
+          {FORMATS.filter((fmt) => fmt.id.includes("ample")).map((fmt) => {
+            const formatAvailable = canExportFormat(fmt.id, project?.tracks);
+            const unavailableReason = exportUnavailableReason(fmt.id, project?.tracks);
+            return (
+              <Box key={fmt.id} className="flex items-center gap-4 py-3" sx={{ borderTop: `1px solid ${palette.borderDefault}` }}>
+                <Box className="flex-1 min-w-0"><Typography sx={{ color: palette.textPrimary, fontSize: 13, fontWeight: 700 }}>{fmt.label}</Typography><Typography sx={{ color: palette.textTertiary, fontSize: 11, mt: .25 }}>{unavailableReason || fmt.description}</Typography></Box>
+                <Button size="small" variant="outlined" startIcon={exporting === fmt.id ? <CircularProgress size={16} /> : <DownloadIcon />} onClick={() => handleExport(fmt.id)} disabled={exporting !== null || !canExport || !formatAvailable}>Export</Button>
+              </Box>
+            );
+          })}
+        </Box>
       </Box>
 
       {/* ── alphaTab preview ── */}

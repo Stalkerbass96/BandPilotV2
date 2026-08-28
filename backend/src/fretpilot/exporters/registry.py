@@ -44,7 +44,12 @@ class GP5SongExporter:
         validate_song(song, raise_on_error=True)
         guitar, drums = song_to_legacy(song)
         guitar, projected = _with_gp5_pitched_projection(song, guitar)
-        result = export_bandpilot(guitar, drums, output_path)
+        result = export_bandpilot(
+            guitar,
+            drums,
+            output_path,
+            track_order=(track.id for track in song.score.tracks),
+        )
         if projected:
             result.warnings.append(
                 "GP5 represents non-fretted parts with pitch-preserving virtual strings; "
@@ -132,6 +137,12 @@ def _with_gp5_pitched_projection(
                 tuning=[0] * virtual_string_count,
                 fret_count=127,
                 measures=measures,
+                program=(
+                    int(track.instrument["program"])
+                    if track.instrument.get("program") is not None
+                    else None
+                ),
+                mixer=dict(track.instrument.get("mixer", {})),
             )
         )
     if not projected_tracks:

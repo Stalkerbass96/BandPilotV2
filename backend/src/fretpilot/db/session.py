@@ -102,7 +102,12 @@ def _upgrade_schema(database_url: str) -> None:
                 )
             if "track_summary" not in project_columns:
                 connection.execute(text("ALTER TABLE projects ADD COLUMN track_summary TEXT"))
-        _run_alembic(config, command.stamp, "head")
+        # The recognized metadata-created schema matches revision 0001 after
+        # the two project columns above are added.  Stamping ``head`` here
+        # would silently skip every later migration and leave a partially
+        # upgraded database.
+        _run_alembic(config, command.stamp, "20260823_0001")
+        _run_alembic(config, command.upgrade, "head")
         return
 
     _run_alembic(config, command.upgrade, "head")
